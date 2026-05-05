@@ -1,3 +1,9 @@
+## 0.0.5
+
+**Features**
+
+- add update command
+
 ## 0.0.4
 
 **Features**
