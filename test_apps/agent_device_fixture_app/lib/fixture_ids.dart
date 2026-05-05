@@ -40,6 +40,8 @@ class FixtureIds {
   static const stateResetBatchButton = 'fixture.state.reset_batch_button';
   static const stateProgressTargetText = 'fixture.state.progress_target_text';
   static const stateProgressSlider = 'fixture.state.progress_slider';
+  static const stateVolumeTargetText = 'fixture.state.volume_target_text';
+  static const stateVolumeSlider = 'fixture.state.volume_slider';
   static const stateLoadRecommendationsButton =
       'fixture.state.load_recommendations_button';
   static const stateShowConfirmationSnackbarButton =

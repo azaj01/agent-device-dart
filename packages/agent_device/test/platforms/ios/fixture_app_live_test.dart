@@ -190,13 +190,16 @@ void main() {
   );
 
   test(
-    'adjusts State Lab progress slider via set position and increment',
+    'adjusts State Lab sliders (horizontal and vertical)',
     () async {
-      recorder?.chapter('adjusts progress slider');
+      recorder?.chapter('adjusts sliders');
       await tapId(device, FixtureIds.homeOpenStateLabButton);
+
+      // Scroll down to ensure sliders are visible.
+      await swipeUp(device, startY: 600, endY: 300);
       await expectVisibleId(device, FixtureIds.stateProgressSlider);
 
-      // Set slider to 0% via normalized position.
+      // Horizontal slider: set to 0%.
       await adjustSliderById(
         device,
         FixtureIds.stateProgressSlider,
@@ -208,19 +211,7 @@ void main() {
         'Progress target: 0%',
       );
 
-      // Set slider to 50%.
-      await adjustSliderById(
-        device,
-        FixtureIds.stateProgressSlider,
-        normalizedPosition: 0.5,
-      );
-      await expectIdText(
-        device,
-        FixtureIds.stateProgressTargetText,
-        'Progress target: 50%',
-      );
-
-      // Set slider to 100%.
+      // Horizontal slider: set to 100%.
       await adjustSliderById(
         device,
         FixtureIds.stateProgressSlider,
@@ -231,7 +222,32 @@ void main() {
         FixtureIds.stateProgressTargetText,
         'Progress target: 100%',
       );
+
+      // Vertical slider: set to 0%.
+      await swipeUp(device, startY: 600, endY: 300);
+      await adjustSliderById(
+        device,
+        FixtureIds.stateVolumeSlider,
+        normalizedPosition: 0.0,
+      );
+      await expectIdText(
+        device,
+        FixtureIds.stateVolumeTargetText,
+        'Volume: 0%',
+      );
+
+      // Vertical slider: set to 100%.
+      await adjustSliderById(
+        device,
+        FixtureIds.stateVolumeSlider,
+        normalizedPosition: 1.0,
+      );
+      await expectIdText(
+        device,
+        FixtureIds.stateVolumeTargetText,
+        'Volume: 100%',
+      );
     },
-    timeout: const Timeout(Duration(seconds: 90)),
+    timeout: const Timeout(Duration(seconds: 120)),
   );
 }

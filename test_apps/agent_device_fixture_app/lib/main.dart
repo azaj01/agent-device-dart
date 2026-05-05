@@ -507,6 +507,7 @@ class StateLabScreen extends StatefulWidget {
 class _StateLabScreenState extends State<StateLabScreen> {
   int _batchCount = 2;
   double _progressTarget = 0.35;
+  double _volumeLevel = 0.5;
   bool _loading = false;
   List<String> _recommendations = const [];
 
@@ -597,6 +598,28 @@ class _StateLabScreenState extends State<StateLabScreen> {
                   _progressTarget = value;
                 });
               },
+            ),
+          ),
+          const SizedBox(height: 24),
+          _identified(
+            FixtureIds.stateVolumeTargetText,
+            Text('Volume: ${(_volumeLevel * 100).round()}%'),
+          ),
+          SizedBox(
+            height: 150,
+            child: _identifiedControl(
+              FixtureIds.stateVolumeSlider,
+              RotatedBox(
+                quarterTurns: 3,
+                child: Slider(
+                  value: _volumeLevel,
+                  onChanged: (value) {
+                    setState(() {
+                      _volumeLevel = value;
+                    });
+                  },
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 16),
