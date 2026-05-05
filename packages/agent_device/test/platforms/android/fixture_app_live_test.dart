@@ -39,6 +39,7 @@ void main() {
       sessionName: 'fixture-android-package',
     );
     print('[fixture-android] opened session on ${device.device.id}');
+    await device.openApp(packageName);
     recorder = createTestRecorder(device, suiteName: 'fixture-android');
     await recorder?.start();
   });
