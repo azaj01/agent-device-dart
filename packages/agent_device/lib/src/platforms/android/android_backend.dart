@@ -13,6 +13,7 @@ import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
 import 'package:path/path.dart' as p;
 
+import 'adb.dart';
 import 'app_lifecycle.dart';
 import 'device_input_state.dart';
 import 'devices.dart';
@@ -193,6 +194,58 @@ class AndroidBackend extends Backend {
       amount: options.amount?.toDouble(),
       pixels: options.pixels?.toDouble(),
     );
+  }
+
+  @override
+  Future<BackendActionResult> adjustSlider(
+    BackendCommandContext ctx,
+    BackendAdjustSliderOptions options,
+  ) async {
+    final serial = _serial(ctx);
+    final target = options.target;
+    if (target == null) {
+      unsupported('adjustSlider requires resolved target coordinates');
+    }
+    final x = target.x.round();
+    final y = target.y.round();
+
+    if (options.normalizedPosition != null) {
+      // Swipe from current position to target position.
+      // Use a snapshot to find the slider's rect bounds.
+      final snap = await snapshotAndroid(serial);
+      final node = _findNodeNear(snap.nodes, x, y);
+      if (node?.rect != null) {
+        final rect = node!.rect!;
+        final targetX = rect.x + (rect.width * options.normalizedPosition!);
+        final targetY = rect.y + (rect.height / 2);
+        await runCmd('adb', adbArgs(serial, [
+          'shell', 'input', 'swipe',
+          '$x', '$y',
+          '${targetX.round()}', '${targetY.round()}',
+          '300',
+        ]));
+      } else {
+        // No rect — estimate based on screen width.
+        final targetX = (options.normalizedPosition! * 1080).round();
+        await runCmd('adb', adbArgs(serial, [
+          'shell', 'input', 'swipe',
+          '$x', '$y', '$targetX', '$y', '300',
+        ]));
+      }
+      return null;
+    }
+
+    // Increment/decrement: short swipe left or right from the target.
+    final swipeDistance = options.action == 'decrement' ? -50 : 50;
+    for (var i = 0; i < options.steps; i++) {
+      await runCmd('adb', adbArgs(serial, [
+        'shell', 'input', 'swipe',
+        '$x', '$y',
+        '${x + swipeDistance}', '$y',
+        '200',
+      ]));
+    }
+    return null;
   }
 
   // =========================================================================
@@ -985,3 +1038,21 @@ DeviceRotation _toDeviceRotation(BackendDeviceOrientation o) => switch (o) {
   BackendDeviceOrientation.landscapeLeft => DeviceRotation.landscapeLeft,
   BackendDeviceOrientation.landscapeRight => DeviceRotation.landscapeRight,
 };
+
+RawSnapshotNode? _findNodeNear(List<RawSnapshotNode> nodes, int x, int y) {
+  final point = Point(x: x.toDouble(), y: y.toDouble());
+  RawSnapshotNode? best;
+  var bestDist = double.infinity;
+  for (final node in nodes) {
+    final r = node.rect;
+    if (r == null) continue;
+    if (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height) {
+      final area = r.width * r.height;
+      if (area < bestDist) {
+        best = node;
+        bestDist = area;
+      }
+    }
+  }
+  return best;
+}
