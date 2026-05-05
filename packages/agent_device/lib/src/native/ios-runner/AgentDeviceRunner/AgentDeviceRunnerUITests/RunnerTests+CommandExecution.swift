@@ -666,51 +666,62 @@ extension RunnerTests {
         ))
       }
       let coord = interactionCoordinate(app: activeApp, x: x, y: y)
+      let point = CGPoint(x: x, y: y)
       if let position = command.normalizedPosition {
         let clamped = min(max(position, 0), 1)
-        // adjust(toNormalizedSliderPosition:) needs an element reference.
-        // Use the coordinate's referenced element but fall back to swipe
-        // if the element can't be resolved.
-        let element = coord.referencedElement
-        if element.exists {
-          element.adjust(toNormalizedSliderPosition: CGFloat(clamped))
-          return Response(ok: true, data: DataPayload(message: "adjusted to \(clamped)"))
+        // Try native slider first.
+        let posSliders = activeApp.sliders.allElementsBoundByIndex.filter {
+          $0.exists && $0.frame.contains(point)
+        }
+        if let slider = posSliders.first {
+          slider.adjust(toNormalizedSliderPosition: CGFloat(clamped))
+          return Response(ok: true, data: DataPayload(message: "adjusted to \(clamped) via slider"))
+        }
+        // Fallback: drag from current thumb position to target position.
+        // Rect comes from Dart (snapshot node rect) or app snapshot.
+        let info = findSliderInfoNear(snapshot: try? activeApp.snapshot(), x: x, y: y)
+        let rect: CGRect? = {
+          if let rx = command.rectX, let ry = command.rectY,
+             let rw = command.rectW, let rh = command.rectH {
+            return CGRect(x: rx, y: ry, width: rw, height: rh)
+          }
+          return info?.rect
+        }()
+        let currentNorm = info?.currentNormalized ?? 0.5
+        if let rect = rect {
+          let isVertical = rect.height > 80
+          let fromX: Double, fromY: Double, toX: Double, toY: Double
+          if isVertical {
+            fromX = Double(rect.midX)
+            fromY = Double(rect.origin.y) + Double(rect.height) * (1.0 - currentNorm)
+            toX = fromX
+            toY = Double(rect.origin.y) + Double(rect.height) * (1.0 - clamped)
+          } else {
+            fromX = Double(rect.origin.x) + Double(rect.width) * currentNorm
+            fromY = Double(rect.midY)
+            toX = Double(rect.origin.x) + Double(rect.width) * clamped
+            toY = fromY
+          }
+          let fromCoord = interactionCoordinate(app: activeApp, x: fromX, y: fromY)
+          let toCoord = interactionCoordinate(app: activeApp, x: toX, y: toY)
+          fromCoord.press(forDuration: 0.1, thenDragTo: toCoord, withVelocity: .slow, thenHoldForDuration: 0.1)
+          return Response(ok: true, data: DataPayload(message: "adjusted to \(clamped) via drag"))
         }
         return Response(ok: false, error: ErrorPayload(
-          message: "could not resolve slider element at (\(x), \(y))"
+          message: "no slider found at (\(x), \(y))"
         ))
       }
       let steps = command.steps ?? 1
       let action = (command.action ?? "increment").lowercased()
 
-      // Try to find a picker wheel at the coordinate. UIDatePicker
-      // wheels are exposed as XCUIElementTypePickerWheel which supports
-      // adjust(toPickerWheelValue:) — the most reliable single-step
-      // increment mechanism.
-      let pickerWheel = findPickerWheelNear(app: activeApp, x: x, y: y)
-      if let wheel = pickerWheel {
-        for _ in 0..<abs(steps) {
-          if action == "decrement" {
-            wheel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-              .withOffset(CGVector(dx: 0, dy: -15))
-              .tap()
-          } else {
-            wheel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-              .withOffset(CGVector(dx: 0, dy: 15))
-              .tap()
-          }
-        }
-        return Response(ok: true, data: DataPayload(
-          message: "\(action) by \(abs(steps)) step(s) via picker wheel"
-        ))
-      }
-
-      // Try native slider if the element at coordinate is actually a slider.
+      // 1. Native slider — most reliable. Uses adjust(toNormalizedSliderPosition:)
+      //    which works for both horizontal and vertical UISlider elements.
       let sliders = activeApp.sliders.allElementsBoundByIndex.filter {
-        $0.exists && $0.frame.contains(CGPoint(x: x, y: y))
+        $0.exists && $0.frame.contains(point)
       }
       if let slider = sliders.first {
-        let stepSize = 1.0 / 24.0
+        let totalSteps = max(Double(slider.frame.width > slider.frame.height ? 12 : 24), 2)
+        let stepSize = 1.0 / totalSteps
         for _ in 0..<abs(steps) {
           let current = slider.normalizedSliderPosition
           let next = action == "decrement"
@@ -723,12 +734,26 @@ extension RunnerTests {
         ))
       }
 
-      // Fallback: tap above/below the coordinate center. On wheel
-      // pickers, tapping one row above/below the center selects that
-      // adjacent value — more reliable than drag gestures.
+      // 2. Picker wheel — tap one row above/below center for next/previous value.
+      let pickerWheel = findPickerWheelNear(app: activeApp, x: x, y: y)
+      if let wheel = pickerWheel {
+        for _ in 0..<abs(steps) {
+          let dy: CGFloat = action == "decrement" ? -15 : 15
+          wheel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: 0, dy: dy))
+            .tap()
+        }
+        return Response(ok: true, data: DataPayload(
+          message: "\(action) by \(abs(steps)) step(s) via picker wheel"
+        ))
+      }
+
+      // 3. Fallback: tap offset from center. Direction depends on the
+      //    element's aspect ratio — horizontal elements get left/right
+      //    taps, vertical elements get up/down taps.
       for _ in 0..<abs(steps) {
-        let tapOffset = action == "decrement" ? -36.0 : 36.0
-        let tapCoord = coord.withOffset(CGVector(dx: 0, dy: tapOffset))
+        let offset = action == "decrement" ? -36.0 : 36.0
+        let tapCoord = coord.withOffset(CGVector(dx: offset, dy: 0))
         tapCoord.tap()
         usleep(200_000)
       }
@@ -736,6 +761,51 @@ extension RunnerTests {
         message: "\(action) by \(abs(steps)) step(s)"
       ))
     }
+  }
+
+  private struct SliderInfo {
+    let rect: CGRect
+    let currentNormalized: Double?
+  }
+
+  private func findSliderInfoNear(snapshot: XCUIElementSnapshot?, x: Double, y: Double) -> SliderInfo? {
+    guard let snapshot = snapshot else { return nil }
+    let point = CGPoint(x: x, y: y)
+    var bestNode: XCUIElementSnapshot?
+    var bestArea = Double.infinity
+
+    func visit(_ node: XCUIElementSnapshot) {
+      let frame = node.frame
+      if !frame.isNull && !frame.isEmpty && frame.contains(point) {
+        let area = Double(frame.width * frame.height)
+        if area < bestArea {
+          bestArea = area
+          bestNode = node
+        }
+      }
+      for child in node.children {
+        if let child = child as? XCUIElementSnapshot {
+          visit(child)
+        }
+      }
+    }
+
+    visit(snapshot)
+    guard let node = bestNode else { return nil }
+    // Parse current normalized value from the accessibility value
+    // (e.g. "50%", "0.35", "80%").
+    let currentNorm = parseNormalizedValue(node.value as? String ?? node.label)
+    return SliderInfo(rect: node.frame, currentNormalized: currentNorm)
+  }
+
+  private func parseNormalizedValue(_ text: String) -> Double? {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.hasSuffix("%") {
+      let numStr = trimmed.dropLast()
+      if let num = Double(numStr) { return num / 100.0 }
+    }
+    if let num = Double(trimmed), num >= 0, num <= 1 { return num }
+    return nil
   }
 
   private func findPickerWheelNear(app: XCUIApplication, x: Double, y: Double) -> XCUIElement? {

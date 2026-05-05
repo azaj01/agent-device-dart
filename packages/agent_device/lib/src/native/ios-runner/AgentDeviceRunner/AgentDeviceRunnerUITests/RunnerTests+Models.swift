@@ -62,6 +62,10 @@ struct Command: Codable {
   let fullscreen: Bool?
   let normalizedPosition: Double?
   let steps: Int?
+  let rectX: Double?
+  let rectY: Double?
+  let rectW: Double?
+  let rectH: Double?
 }
 
 struct Response: Codable {

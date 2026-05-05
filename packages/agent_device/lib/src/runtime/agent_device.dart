@@ -363,8 +363,22 @@ class AgentDevice {
     InteractionTarget? interactionTarget,
   }) async {
     Point? resolved;
+    Rect? elementRect;
     if (interactionTarget != null) {
-      resolved = await resolveTarget(interactionTarget);
+      if (interactionTarget is PointTarget) {
+        resolved = interactionTarget.point;
+      } else {
+        final snap = await snapshot();
+        final node = await _resolveNode(interactionTarget, snap);
+        final r = node.rect;
+        if (r != null) {
+          resolved = Point(
+            x: r.x + r.width / 2,
+            y: r.y + r.height / 2,
+          );
+          elementRect = r;
+        }
+      }
     }
     await backend.adjustSlider(
       await _ctx(),
@@ -373,6 +387,7 @@ class AgentDevice {
         action: action,
         steps: steps,
         target: resolved,
+        elementRect: elementRect,
       ),
     );
   }

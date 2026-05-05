@@ -994,6 +994,10 @@ class IosBackend extends Backend {
         'normalizedPosition': options.normalizedPosition,
       'action': options.action,
       'steps': options.steps,
+      if (options.elementRect != null) 'rectX': options.elementRect!.x,
+      if (options.elementRect != null) 'rectY': options.elementRect!.y,
+      if (options.elementRect != null) 'rectW': options.elementRect!.width,
+      if (options.elementRect != null) 'rectH': options.elementRect!.height,
     });
     return null;
   }

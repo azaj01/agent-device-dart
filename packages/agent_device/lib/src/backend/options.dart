@@ -141,12 +141,14 @@ class BackendAdjustSliderOptions {
   final String action; // 'increment' | 'decrement'
   final int steps;
   final Point? target;
+  final Rect? elementRect;
 
   const BackendAdjustSliderOptions({
     this.normalizedPosition,
     this.action = 'increment',
     this.steps = 1,
     this.target,
+    this.elementRect,
   });
 }
 
