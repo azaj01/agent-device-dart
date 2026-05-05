@@ -61,6 +61,12 @@ ad replay flow.ad --platform ios
 
 # Record video with chapter markers per step
 ad replay flow.ad --record recording.mp4
+
+# Frame perf (jank, dropped frames, percentiles)
+ad perf --metric fps --platform android
+
+# Update to the latest version
+ad update
 ```
 
 Every command supports `--json` for machine-readable output and
@@ -159,8 +165,7 @@ screenshot ./screenshots/onboarding.png
 
 Run with `ad replay flow.ad` or `ad test flows/` (runs all `.ad` files in a directory).
 
-Supported actions in the replay runner: `open`, `close`, `home`, `back`, `app-switcher`, `rotate`, `type`, `swipe`, `scroll`, `longpress`, `pinch`, `click`/`press`/`tap`, `fill`, `snapshot`, `screenshot`, `record start/stop`, `appstate`. Selector-backed steps (`click`/`fill`/`get`/`is`/`wait`) can auto-heal with `--replay-update`: on failure a fresh snapshot is taken, the selector is re-resolved against the current tree, the step retried, and the script file rewritten with the
-healed selector.
+Supported actions in the replay runner: `open`, `close`, `home`, `back`, `app-switcher`, `rotate`, `type`, `swipe`, `scroll`, `longpress`, `pinch`, `click`/`press`/`tap`, `fill`, `find`, `get`, `is`, `wait`, `snapshot`, `screenshot`, `record start/stop`, `appstate`, `apps`, `clipboard`, `keyboard`, `settings`, `alert`, `boot`, `install`, `push`, `trigger-app-event`. Selector-backed steps (`click`/`fill`/`get`/`is`/`wait`) can auto-heal with `--replay-update`: on failure a fresh snapshot is taken, the selector is re-resolved against the current tree, the step retried, and the script file rewritten with the healed selector.
 
 #### Parameters
 
@@ -187,14 +192,14 @@ Both are resolved automatically — no manual build steps required.
 
 ## Environment variables
 
-| Variable                              | Purpose                                                    |
-| ------------------------------------- | ---------------------------------------------------------- |
-| `AGENT_DEVICE_STATE_DIR`              | Override state directory (default: `~/.agent-device/`)     |
-| `AGENT_DEVICE_VERBOSE`                | Set to `1` for diagnostic logging                          |
-| `AGENT_DEVICE_ANDROID_SNAPSHOT_DEBUG` | Set to `1` for Android snapshot diagnostics                |
-| `AGENT_DEVICE_IOS_RUNNER_DEBUG`       | Set to `1` for iOS runner HTTP diagnostics                 |
-| `AGENT_DEVICE_IOS_RUNNER_BUILD_DIR`   | Override iOS runner build products path                    |
-| `AD_RECORD_TESTS`                     | Set to a directory path to enable video recording in tests |
+| Variable                              | Purpose                                                          |
+| ------------------------------------- | ---------------------------------------------------------------- |
+| `AGENT_DEVICE_STATE_DIR`              | Override state directory (default: `~/.agent-device/`)           |
+| `AGENT_DEVICE_VERBOSE`                | Set to `1` for diagnostic logging (same as `--verbose` CLI flag) |
+| `AGENT_DEVICE_ANDROID_SNAPSHOT_DEBUG` | Set to `1` for Android snapshot diagnostics                      |
+| `AGENT_DEVICE_IOS_RUNNER_DEBUG`       | Set to `1` for iOS runner HTTP diagnostics                       |
+| `AGENT_DEVICE_IOS_RUNNER_BUILD_DIR`   | Override iOS runner build products path                          |
+| `AD_RECORD_TESTS`                     | Set to a directory path to enable video recording in tests       |
 
 ### Physical iOS device prerequisites
 
@@ -237,7 +242,7 @@ Every command takes `--platform ios|android`, `--serial <udid|id>`, `--session <
 | `logs --since 30s --out <path>` (one-shot)                         | ✅ (logcat -T)                                 | ✅ (simctl log show)                | ❌ (use `--stream` instead — Apple has no host-side `log show` for devices) |
 | `logs --stream --out <path>` / `logs --stop`                       | ✅ (logcat --pid + cross-invocation PID cache) | ✅ (simctl log stream predicate)    | ✅ (idevicesyslog via libimobiledevice)                                     |
 | `record start` / `record stop`                                     | ✅ (screenrecord + pull)                       | ✅ (XCUITest runner + sandbox pull) | ✅ (runner + `devicectl copy from` — needs device trust + Developer Mode)   |
-| `perf [--metric cpu\|memory]`                                      | ✅ (dumpsys)                                   | ✅ (simctl spawn ps)                | ✅ (xctrace 2× 1s + delta — true CPU%)                                      |
+| `perf [--metric cpu\|memory\|fps]`                                 | ✅ (dumpsys + gfxinfo framestats)              | ✅ (simctl spawn ps)                | ✅ (xctrace 2× 1s + delta — true CPU%, Core Animation frames)               |
 | `network <logPath>` (HTTP from logs)                               | ✅ (cross-line Android enrichment)             | ✅                                  | ✅                                                                          |
 | `install` / `uninstall` / `reinstall`                              | ✅ (apk + aab)                                 | ✅ (.app + .ipa)                    | ✅ (.app + .ipa via devicectl — needs signed bundle)                        |
 | `replay <script.ad>` / `test <glob>`                               | ✅                                             | ✅                                  | ✅                                                                          |
@@ -282,7 +287,8 @@ bin/agent_device.dart                CLI entry point (dispatches to cli/run_cli.
     ├── app_lifecycle.dart, devices.dart, perf.dart, screenshot.dart
 ```
 
-The XCUITest runner itself lives at `ios-runner/AgentDeviceRunner/` —
+The XCUITest runner source is bundled at `lib/src/native/ios-runner/AgentDeviceRunner/`
+(also at `ios-runner/AgentDeviceRunner/` in the repo development layout) —
 a small Swift project Dart shells out to via `xcodebuild
 test-without-building`. See `RunnerBSDSocketServer.swift` /
 `RunnerTests+CommandExecution.swift` for the on-device side.
