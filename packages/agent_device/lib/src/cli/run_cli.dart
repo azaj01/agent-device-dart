@@ -22,6 +22,7 @@ import 'commands/selector_cmds.dart';
 import 'commands/session_cmd.dart';
 import 'commands/simple_action_cmds.dart';
 import 'commands/snapshot_cmd.dart';
+import 'commands/update_cmd.dart';
 import 'output.dart';
 
 /// Build the [CommandRunner] used by both the live CLI and the
@@ -107,6 +108,7 @@ CommandRunner<int> buildCliRunner({String executableName = 'agent-device'}) {
     ..addCommand(ReplayCommand())
     ..addCommand(TestCommand())
     ..addCommand(SessionCommand())
+    ..addCommand(UpdateCommand())
     ..addCommand(CompletionCommand());
   return runner;
 }
