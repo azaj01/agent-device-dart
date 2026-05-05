@@ -979,6 +979,26 @@ class IosBackend extends Backend {
   }
 
   @override
+  Future<BackendActionResult> adjustSlider(
+    BackendCommandContext ctx,
+    BackendAdjustSliderOptions options,
+  ) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    await _sendOrThrow(session, {
+      'command': 'adjustSlider',
+      'appBundleId': ?bundleId,
+      if (options.target != null) 'x': options.target!.x,
+      if (options.target != null) 'y': options.target!.y,
+      if (options.normalizedPosition != null)
+        'normalizedPosition': options.normalizedPosition,
+      'action': options.action,
+      'steps': options.steps,
+    });
+    return null;
+  }
+
+  @override
   Future<String> getClipboard(BackendCommandContext ctx) async {
     final udid = _udid(ctx);
     final r = await Process.run(

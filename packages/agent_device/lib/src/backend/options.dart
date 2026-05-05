@@ -135,6 +135,21 @@ class BackendPinchOptions {
   const BackendPinchOptions({required this.scale, this.center});
 }
 
+/// Options for adjusting a slider.
+class BackendAdjustSliderOptions {
+  final double? normalizedPosition;
+  final String action; // 'increment' | 'decrement'
+  final int steps;
+  final Point? target;
+
+  const BackendAdjustSliderOptions({
+    this.normalizedPosition,
+    this.action = 'increment',
+    this.steps = 1,
+    this.target,
+  });
+}
+
 // ============================================================================
 // Text and Clipboard
 // ============================================================================

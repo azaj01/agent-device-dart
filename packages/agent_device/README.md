@@ -62,6 +62,11 @@ ad replay flow.ad --platform ios
 # Record video with chapter markers per step
 ad replay flow.ad --record recording.mp4
 
+# Adjust a slider
+ad slider --position 0.5 'id=volumeSlider'
+ad slider increment @e7
+ad slider decrement --steps 3 'id=brightnessSlider'
+
 # Frame perf (jank, dropped frames, percentiles)
 ad perf --metric fps --platform android
 
@@ -149,6 +154,66 @@ InteractionTarget.selector('id=submit || text="Submit"')
 InteractionTarget.ref('@e5')
 ```
 
+### Slider control
+
+The `slider` command adjusts slider and picker elements. It targets
+elements using the same selector/ref/coordinate system as `click`.
+
+**CLI:**
+
+```bash
+# Set to an exact position (0.0 = min, 1.0 = max)
+ad slider --position 0.5 'id=volumeSlider'
+
+# Increment / decrement by steps
+ad slider increment @e7
+ad slider decrement --steps 3 'id=brightnessSlider'
+```
+
+**Library:**
+
+```dart
+// Set to 75%
+await device.adjustSlider(
+  normalizedPosition: 0.75,
+  interactionTarget: InteractionTarget.selector('id=volumeSlider'),
+);
+
+// Increment by 2 steps
+await device.adjustSlider(
+  action: 'increment',
+  steps: 2,
+  interactionTarget: InteractionTarget.ref('@e7'),
+);
+```
+
+**.ad script:**
+
+```
+slider --position 0.5 'id=volumeSlider'
+slider increment @e7
+slider decrement --steps 3 'id=brightnessSlider'
+```
+
+**How it works on iOS:**
+
+The target is resolved to screen coordinates (via snapshot ref or
+selector match), then the XCUITest runner applies the best strategy:
+
+1. **Native `UISlider`** — uses `adjust(toNormalizedSliderPosition:)`
+   for `--position`, or `normalizedSliderPosition` read + step for
+   increment/decrement. Most precise.
+2. **Picker wheels** (`UIDatePicker`, `UIPickerView`) — finds the
+   nearest `XCUIElementTypePickerWheel` and taps one row above/below
+   center to select the adjacent value. Works even when the accessibility
+   inspector reports the element as `AXSlider` but XCUITest sees it as
+   `.other`.
+3. **Fallback** — taps 36pt above/below the target coordinate for
+   elements that don't match either pattern.
+
+> **Note:** Android slider support is not yet implemented. Use `swipe`
+> on the slider's coordinates as a workaround.
+
 ## .ad replay scripts
 
 Text-based scripts for repeatable UI flows:
@@ -165,7 +230,7 @@ screenshot ./screenshots/onboarding.png
 
 Run with `ad replay flow.ad` or `ad test flows/` (runs all `.ad` files in a directory).
 
-Supported actions in the replay runner: `open`, `close`, `home`, `back`, `app-switcher`, `rotate`, `type`, `swipe`, `scroll`, `longpress`, `pinch`, `click`/`press`/`tap`, `fill`, `find`, `get`, `is`, `wait`, `snapshot`, `screenshot`, `record start/stop`, `appstate`, `apps`, `clipboard`, `keyboard`, `settings`, `alert`, `boot`, `install`, `push`, `trigger-app-event`. Selector-backed steps (`click`/`fill`/`get`/`is`/`wait`) can auto-heal with `--replay-update`: on failure a fresh snapshot is taken, the selector is re-resolved against the current tree, the step retried, and the script file rewritten with the healed selector.
+Supported actions in the replay runner: `open`, `close`, `home`, `back`, `app-switcher`, `rotate`, `type`, `swipe`, `scroll`, `longpress`, `pinch`, `click`/`press`/`tap`, `fill`, `find`, `get`, `is`, `wait`, `slider`, `snapshot`, `screenshot`, `record start/stop`, `appstate`, `apps`, `clipboard`, `keyboard`, `settings`, `alert`, `boot`, `install`, `push`, `trigger-app-event`. Selector-backed steps (`click`/`fill`/`get`/`is`/`wait`) can auto-heal with `--replay-update`: on failure a fresh snapshot is taken, the selector is re-resolved against the current tree, the step retried, and the script file rewritten with the healed selector.
 
 #### Parameters
 
@@ -232,6 +297,7 @@ Every command takes `--platform ios|android`, `--serial <udid|id>`, `--session <
 | `fill` / `type` / `focus`                                          | ✅                                             | ✅                                  | ✅                                                                          |
 | `scroll` (direction + amount)                                      | ✅                                             | ✅                                  | ✅                                                                          |
 | `pinch` (scale + optional center)                                  | ❌ (runner gap)                                | ✅                                  | ✅                                                                          |
+| `slider` (position / increment / decrement)                        | ❌ (planned)                                   | ✅ (XCUITest runner)                | ✅                                                                          |
 | `home` / `back` / `app-switcher`                                   | ✅                                             | ✅                                  | ✅                                                                          |
 | `rotate portrait \| landscape-…`                                   | ✅                                             | ✅                                  | ✅                                                                          |
 | `open <app>` / `close [app]`                                       | ✅                                             | ✅ (simctl)                         | ✅ (devicectl)                                                              |

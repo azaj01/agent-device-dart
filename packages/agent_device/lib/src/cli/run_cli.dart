@@ -83,6 +83,7 @@ CommandRunner<int> buildCliRunner({String executableName = 'agent-device'}) {
     ..addCommand(ScrollCommand())
     ..addCommand(LongPressCommand())
     ..addCommand(PinchCommand())
+    ..addCommand(SliderCommand())
     ..addCommand(AppStateCommand())
     ..addCommand(AppsCommand())
     ..addCommand(ClipboardCommand())

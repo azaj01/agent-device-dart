@@ -659,6 +659,103 @@ extension RunnerTests {
           gestureEndUptimeMs: timing.gestureEndUptimeMs
         )
       )
+    case .adjustSlider:
+      guard let x = command.x, let y = command.y else {
+        return Response(ok: false, error: ErrorPayload(
+          message: "adjustSlider requires x/y coordinates"
+        ))
+      }
+      let coord = interactionCoordinate(app: activeApp, x: x, y: y)
+      if let position = command.normalizedPosition {
+        let clamped = min(max(position, 0), 1)
+        // adjust(toNormalizedSliderPosition:) needs an element reference.
+        // Use the coordinate's referenced element but fall back to swipe
+        // if the element can't be resolved.
+        let element = coord.referencedElement
+        if element.exists {
+          element.adjust(toNormalizedSliderPosition: CGFloat(clamped))
+          return Response(ok: true, data: DataPayload(message: "adjusted to \(clamped)"))
+        }
+        return Response(ok: false, error: ErrorPayload(
+          message: "could not resolve slider element at (\(x), \(y))"
+        ))
+      }
+      let steps = command.steps ?? 1
+      let action = (command.action ?? "increment").lowercased()
+
+      // Try to find a picker wheel at the coordinate. UIDatePicker
+      // wheels are exposed as XCUIElementTypePickerWheel which supports
+      // adjust(toPickerWheelValue:) — the most reliable single-step
+      // increment mechanism.
+      let pickerWheel = findPickerWheelNear(app: activeApp, x: x, y: y)
+      if let wheel = pickerWheel {
+        for _ in 0..<abs(steps) {
+          if action == "decrement" {
+            wheel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+              .withOffset(CGVector(dx: 0, dy: -15))
+              .tap()
+          } else {
+            wheel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+              .withOffset(CGVector(dx: 0, dy: 15))
+              .tap()
+          }
+        }
+        return Response(ok: true, data: DataPayload(
+          message: "\(action) by \(abs(steps)) step(s) via picker wheel"
+        ))
+      }
+
+      // Try native slider if the element at coordinate is actually a slider.
+      let sliders = activeApp.sliders.allElementsBoundByIndex.filter {
+        $0.exists && $0.frame.contains(CGPoint(x: x, y: y))
+      }
+      if let slider = sliders.first {
+        let stepSize = 1.0 / 24.0
+        for _ in 0..<abs(steps) {
+          let current = slider.normalizedSliderPosition
+          let next = action == "decrement"
+            ? max(0, current - CGFloat(stepSize))
+            : min(1, current + CGFloat(stepSize))
+          slider.adjust(toNormalizedSliderPosition: next)
+        }
+        return Response(ok: true, data: DataPayload(
+          message: "\(action) by \(abs(steps)) step(s) via slider"
+        ))
+      }
+
+      // Fallback: tap above/below the coordinate center. On wheel
+      // pickers, tapping one row above/below the center selects that
+      // adjacent value — more reliable than drag gestures.
+      for _ in 0..<abs(steps) {
+        let tapOffset = action == "decrement" ? -36.0 : 36.0
+        let tapCoord = coord.withOffset(CGVector(dx: 0, dy: tapOffset))
+        tapCoord.tap()
+        usleep(200_000)
+      }
+      return Response(ok: true, data: DataPayload(
+        message: "\(action) by \(abs(steps)) step(s)"
+      ))
     }
+  }
+
+  private func findPickerWheelNear(app: XCUIApplication, x: Double, y: Double) -> XCUIElement? {
+    let point = CGPoint(x: x, y: y)
+    let wheels = app.pickerWheels.allElementsBoundByIndex
+    // Find the wheel whose frame contains the target point, or the
+    // closest wheel within 50pt.
+    if let exact = wheels.first(where: { $0.exists && $0.frame.contains(point) }) {
+      return exact
+    }
+    var bestWheel: XCUIElement?
+    var bestDistance = 50.0
+    for wheel in wheels where wheel.exists {
+      let center = CGPoint(x: wheel.frame.midX, y: wheel.frame.midY)
+      let dist = hypot(center.x - point.x, center.y - point.y)
+      if dist < bestDistance {
+        bestDistance = dist
+        bestWheel = wheel
+      }
+    }
+    return bestWheel
   }
 }

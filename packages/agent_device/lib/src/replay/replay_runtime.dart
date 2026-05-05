@@ -544,6 +544,28 @@ Future<List<String>> dispatchReplayAction({
       await device.pinch(scale: scale);
       return const [];
 
+    case 'slider':
+      final positionRaw = flags['position'];
+      final position = positionRaw is num ? positionRaw.toDouble() : null;
+      final stepsRaw = flags['steps'];
+      final steps = stepsRaw is num ? stepsRaw.toInt() : 1;
+      final action = positionals.isNotEmpty &&
+              (positionals.first == 'increment' ||
+                  positionals.first == 'decrement')
+          ? positionals.first
+          : 'increment';
+      final targetArgs = (action == positionals.firstOrNull)
+          ? positionals.sublist(1)
+          : positionals;
+      final target = InteractionTarget.parseArgs(targetArgs);
+      await device.adjustSlider(
+        normalizedPosition: position,
+        action: action,
+        steps: steps,
+        interactionTarget: target,
+      );
+      return const [];
+
     case 'click':
     case 'press':
     case 'tap':

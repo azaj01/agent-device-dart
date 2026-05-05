@@ -547,3 +547,22 @@ TestRecorder? createTestRecorder(
   final outPath = p.join(dir, '$suiteName.mp4');
   return TestRecorder(device, outPath);
 }
+
+Future<void> adjustSliderById(
+  AgentDevice device,
+  String id, {
+  double? normalizedPosition,
+  String action = 'increment',
+  int steps = 1,
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  await expectVisibleId(device, id, timeout: timeout);
+  await device.adjustSlider(
+    interactionTarget: InteractionTarget.selector(
+      'id=${jsonEncode(id)}',
+    ),
+    normalizedPosition: normalizedPosition,
+    action: action,
+    steps: steps,
+  );
+}

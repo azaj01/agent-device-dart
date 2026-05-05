@@ -351,6 +351,32 @@ class AgentDevice {
     );
   }
 
+  /// Adjust a slider. Either set to a [normalizedPosition] (0.0–1.0),
+  /// or [action] `'increment'`/`'decrement'` by [steps].
+  ///
+  /// [interactionTarget] resolves `@ref`, selectors, or `x y` to a
+  /// screen point — same resolution as [tapTarget].
+  Future<void> adjustSlider({
+    double? normalizedPosition,
+    String action = 'increment',
+    int steps = 1,
+    InteractionTarget? interactionTarget,
+  }) async {
+    Point? resolved;
+    if (interactionTarget != null) {
+      resolved = await resolveTarget(interactionTarget);
+    }
+    await backend.adjustSlider(
+      await _ctx(),
+      BackendAdjustSliderOptions(
+        normalizedPosition: normalizedPosition,
+        action: action,
+        steps: steps,
+        target: resolved,
+      ),
+    );
+  }
+
   /// Scroll in a [direction] (`'up'`, `'down'`, `'left'`, `'right'`) on
   /// the viewport.
   Future<Object?> scroll(

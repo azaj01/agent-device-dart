@@ -23,6 +23,7 @@ enum CommandType: String, Codable {
   case keyboardDismiss
   case alert
   case pinch
+  case adjustSlider
   case recordStart
   case recordStop
   case uptime
@@ -59,6 +60,8 @@ struct Command: Codable {
   let scope: String?
   let raw: Bool?
   let fullscreen: Bool?
+  let normalizedPosition: Double?
+  let steps: Int?
 }
 
 struct Response: Codable {

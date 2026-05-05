@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:agent_device/src/backend/backend.dart';
 import 'package:agent_device/src/backend/device_info.dart';
+import 'package:agent_device/src/runtime/interaction_target.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart' show Point;
 import 'package:agent_device/src/utils/errors.dart';
 
@@ -404,6 +405,78 @@ class PinchCommand extends AgentDeviceCommand {
       'pinched': scale,
       if (center != null) 'center': [center.x, center.y],
     }, humanFormat: (_) => 'pinched scale=$scale');
+    return 0;
+  }
+}
+
+class SliderCommand extends AgentDeviceCommand {
+  SliderCommand() {
+    argParser
+      ..addOption(
+        'position',
+        help: 'Set slider to a normalized position (0.0–1.0).',
+      )
+      ..addOption(
+        'steps',
+        help: 'Number of increment/decrement steps (default: 1).',
+        defaultsTo: '1',
+      );
+  }
+
+  @override
+  String get name => 'slider';
+
+  @override
+  String get description =>
+      'Adjust a slider: slider increment|decrement [--steps N] <target> '
+      'or slider --position 0.5 <target>.';
+
+  @override
+  Future<int> run() async {
+    final positionRaw = argResults?['position'] as String?;
+    final stepsRaw = argResults?['steps'] as String?;
+    final steps = int.tryParse(stepsRaw ?? '1') ?? 1;
+    final args = positionals;
+    if (args.isEmpty) {
+      throw AppError(
+        AppErrorCodes.invalidArgs,
+        'slider requires <increment|decrement|@ref|selector> or --position.',
+      );
+    }
+    final action = args.first == 'increment' || args.first == 'decrement'
+        ? args.first
+        : 'increment';
+    final targetArgs =
+        (action == args.first) ? args.sublist(1) : args;
+    final target = InteractionTarget.parseArgs(targetArgs);
+    final device = await openAgentDevice();
+    if (positionRaw != null) {
+      final position = double.tryParse(positionRaw);
+      if (position == null || position < 0 || position > 1) {
+        throw AppError(
+          AppErrorCodes.invalidArgs,
+          '--position must be a number between 0.0 and 1.0.',
+        );
+      }
+      await device.adjustSlider(
+        normalizedPosition: position,
+        interactionTarget: target,
+      );
+      emitResult(
+        {'adjusted': position},
+        humanFormat: (_) => 'slider set to $position',
+      );
+      return 0;
+    }
+    await device.adjustSlider(
+      action: action,
+      steps: steps,
+      interactionTarget: target,
+    );
+    emitResult(
+      {'action': action, 'steps': steps},
+      humanFormat: (_) => 'slider $action${steps > 1 ? ' ×$steps' : ''}',
+    );
     return 0;
   }
 }

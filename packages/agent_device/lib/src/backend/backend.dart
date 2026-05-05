@@ -189,6 +189,13 @@ abstract class Backend {
     BackendPinchOptions options,
   ) async => unsupported('pinch');
 
+  /// Adjust a slider: set to a normalized position (0.0–1.0), or
+  /// increment/decrement by a number of steps.
+  Future<BackendActionResult> adjustSlider(
+    BackendCommandContext ctx,
+    BackendAdjustSliderOptions options,
+  ) async => unsupported('adjustSlider');
+
   // =========================================================================
   // Keyboard and Navigation
   // =========================================================================

@@ -188,4 +188,50 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 90)),
   );
+
+  test(
+    'adjusts State Lab progress slider via set position and increment',
+    () async {
+      recorder?.chapter('adjusts progress slider');
+      await tapId(device, FixtureIds.homeOpenStateLabButton);
+      await expectVisibleId(device, FixtureIds.stateProgressSlider);
+
+      // Set slider to 0% via normalized position.
+      await adjustSliderById(
+        device,
+        FixtureIds.stateProgressSlider,
+        normalizedPosition: 0.0,
+      );
+      await expectIdText(
+        device,
+        FixtureIds.stateProgressTargetText,
+        'Progress target: 0%',
+      );
+
+      // Set slider to 50%.
+      await adjustSliderById(
+        device,
+        FixtureIds.stateProgressSlider,
+        normalizedPosition: 0.5,
+      );
+      await expectIdText(
+        device,
+        FixtureIds.stateProgressTargetText,
+        'Progress target: 50%',
+      );
+
+      // Set slider to 100%.
+      await adjustSliderById(
+        device,
+        FixtureIds.stateProgressSlider,
+        normalizedPosition: 1.0,
+      );
+      await expectIdText(
+        device,
+        FixtureIds.stateProgressTargetText,
+        'Progress target: 100%',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 }

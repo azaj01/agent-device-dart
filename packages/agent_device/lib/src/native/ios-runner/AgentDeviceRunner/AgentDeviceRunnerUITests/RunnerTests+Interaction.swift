@@ -570,7 +570,7 @@ extension RunnerTests {
     return app
   }
 
-  private func interactionCoordinate(app: XCUIApplication, x: Double, y: Double) -> XCUICoordinate {
+  func interactionCoordinate(app: XCUIApplication, x: Double, y: Double) -> XCUICoordinate {
     let root = interactionRoot(app: app)
     let origin = root.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
     let rootFrame = root.frame
