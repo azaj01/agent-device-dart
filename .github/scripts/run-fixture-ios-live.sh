@@ -26,10 +26,13 @@ dart run packages/agent_device/bin/agent_device.dart snapshot --session fixture-
 
 # TestRecorder inside the Dart test handles record start/stop + chapter
 # markers. AD_RECORD_TESTS tells it where to write the raw MP4.
+test_exit=0
 AGENT_DEVICE_FIXTURE_IOS_LIVE=1 \
 AGENT_DEVICE_FIXTURE_IOS_UDID="$udid" \
 AD_RECORD_TESTS="$video_dir" \
-dart test packages/agent_device/test/platforms/ios/fixture_app_live_test.dart || true
+dart test packages/agent_device/test/platforms/ios/fixture_app_live_test.dart || test_exit=$?
 
-# Compress the chaptered recording for upload.
+# Compress the chaptered recording for upload (regardless of test result).
 compress_video "$video_dir/fixture-ios.mp4" "$video_dir/fixture-ios-compressed.mp4"
+
+exit "$test_exit"
