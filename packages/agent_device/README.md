@@ -211,8 +211,16 @@ selector match), then the XCUITest runner applies the best strategy:
 3. **Fallback** — taps 36pt above/below the target coordinate for
    elements that don't match either pattern.
 
-> **Note:** Android slider support is not yet implemented. Use `swipe`
-> on the slider's coordinates as a workaround.
+**How it works on Android:**
+
+The target is resolved to coordinates the same way as iOS. Then:
+
+1. **`--position`** — takes a snapshot to find the slider's bounding
+   rect, computes the target x coordinate from the normalized position,
+   and performs `adb shell input swipe` from the current position to
+   the target.
+2. **Increment/decrement** — performs a short horizontal swipe (50px)
+   from the target coordinate in the appropriate direction.
 
 ## .ad replay scripts
 
@@ -297,7 +305,7 @@ Every command takes `--platform ios|android`, `--serial <udid|id>`, `--session <
 | `fill` / `type` / `focus`                                          | ✅                                             | ✅                                  | ✅                                                                          |
 | `scroll` (direction + amount)                                      | ✅                                             | ✅                                  | ✅                                                                          |
 | `pinch` (scale + optional center)                                  | ❌ (runner gap)                                | ✅                                  | ✅                                                                          |
-| `slider` (position / increment / decrement)                        | ❌ (planned)                                   | ✅ (XCUITest runner)                | ✅                                                                          |
+| `slider` (position / increment / decrement)                        | ✅ (adb input swipe)                           | ✅ (XCUITest runner)                | ✅                                                                          |
 | `home` / `back` / `app-switcher`                                   | ✅                                             | ✅                                  | ✅                                                                          |
 | `rotate portrait \| landscape-…`                                   | ✅                                             | ✅                                  | ✅                                                                          |
 | `open <app>` / `close [app]`                                       | ✅                                             | ✅ (simctl)                         | ✅ (devicectl)                                                              |
