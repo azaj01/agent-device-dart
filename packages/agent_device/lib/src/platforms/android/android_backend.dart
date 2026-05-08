@@ -1040,7 +1040,6 @@ DeviceRotation _toDeviceRotation(BackendDeviceOrientation o) => switch (o) {
 };
 
 RawSnapshotNode? _findNodeNear(List<RawSnapshotNode> nodes, int x, int y) {
-  final point = Point(x: x.toDouble(), y: y.toDouble());
   RawSnapshotNode? best;
   var bestDist = double.infinity;
   for (final node in nodes) {

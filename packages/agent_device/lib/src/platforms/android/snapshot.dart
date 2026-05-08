@@ -244,7 +244,9 @@ _captureAndroidUiHierarchyOnce(
       );
       if (isUiAutomationConflict(error)) rethrow;
       final reason = (error is AppError) ? error.message : error.toString();
-      logger.trace('[snapshot] helper failed, falling back to uiautomator: $reason');
+      logger.trace(
+        '[snapshot] helper failed, falling back to uiautomator: $reason',
+      );
       return _captureStockUiHierarchy(serial, fallbackReason: reason);
     }
   }
@@ -256,7 +258,9 @@ _captureAndroidUiHierarchyOnce(
   try {
     final installed = await _isHelperInstalledOnDevice(adb);
     if (installed) {
-      logger.trace('[snapshot] no local artifact, but helper is on device — using it');
+      logger.trace(
+        '[snapshot] no local artifact, but helper is on device — using it',
+      );
       final capture = await captureAndroidSnapshotWithHelper(
         AndroidSnapshotHelperCaptureOptions(
           adb: adb,
@@ -502,8 +506,9 @@ bool isUiAutomationConflict(Object error) {
   if (reason == 'uiautomator_killed') return true;
   if (msg.contains('killed') && msg.contains('uiautomator')) return true;
   if (msg.contains('already registered')) return true;
-  if (msg.contains('could not be parsed') &&
-      msg.contains('snapshot helper')) return true;
+  if (msg.contains('could not be parsed') && msg.contains('snapshot helper')) {
+    return true;
+  }
   return false;
 }
 
