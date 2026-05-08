@@ -1,3 +1,15 @@
+## 0.0.6
+
+**Features**
+
+- add slider increment and decrement support for ios
+- **ios**: slider control with vertical + horizontal support - experimental
+- **android**: slider support via adb input swipe - experimental
+
+**Refactor**
+
+- deduplicate native assets via symlinks
+
 ## 0.0.5
 
 **Features**

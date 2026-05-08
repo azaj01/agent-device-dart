@@ -156,71 +156,13 @@ InteractionTarget.ref('@e5')
 
 ### Slider control
 
-The `slider` command adjusts slider and picker elements. It targets
-elements using the same selector/ref/coordinate system as `click`.
-
-**CLI:**
+Adjust sliders, pickers, and range controls. See [doc/slider.md](doc/slider.md) for full details.
 
 ```bash
-# Set to an exact position (0.0 = min, 1.0 = max)
 ad slider --position 0.5 'id=volumeSlider'
-
-# Increment / decrement by steps
 ad slider increment @e7
 ad slider decrement --steps 3 'id=brightnessSlider'
 ```
-
-**Library:**
-
-```dart
-// Set to 75%
-await device.adjustSlider(
-  normalizedPosition: 0.75,
-  interactionTarget: InteractionTarget.selector('id=volumeSlider'),
-);
-
-// Increment by 2 steps
-await device.adjustSlider(
-  action: 'increment',
-  steps: 2,
-  interactionTarget: InteractionTarget.ref('@e7'),
-);
-```
-
-**.ad script:**
-
-```
-slider --position 0.5 'id=volumeSlider'
-slider increment @e7
-slider decrement --steps 3 'id=brightnessSlider'
-```
-
-**How it works on iOS:**
-
-The target is resolved to screen coordinates (via snapshot ref or
-selector match), then the XCUITest runner applies the best strategy:
-
-1. **Native `UISlider`** — uses `adjust(toNormalizedSliderPosition:)`
-   for `--position`, or `normalizedSliderPosition` read + step for
-   increment/decrement. Most precise.
-2. **Picker wheels** (`UIDatePicker`, `UIPickerView`) — finds the
-   nearest `XCUIElementTypePickerWheel` and taps one row above/below
-   center to select the adjacent value. Works even when the accessibility
-   inspector reports the element as `AXSlider` but XCUITest sees it as
-   `.other`.
-3. **Fallback** — taps 36pt above/below the target coordinate for
-   elements that don't match either pattern.
-
-**How it works on Android:**
-
-The target is resolved to coordinates the same way as iOS. Then:
-
-1. **`--position`** — takes a snapshot to find the slider's bounding
-   rect, computes the target x coordinate from the normalized position,
-   and performs `adb shell input swipe` from the current position to
-   the target.
-2. **Increment/decrement** — performs a short horizontal swipe (50px)
-   from the target coordinate in the appropriate direction.
 
 ## .ad replay scripts
 
