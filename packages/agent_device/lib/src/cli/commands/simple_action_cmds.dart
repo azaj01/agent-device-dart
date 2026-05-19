@@ -6,6 +6,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:agent_device/src/backend/backend.dart';
 import 'package:agent_device/src/backend/device_info.dart';
@@ -446,8 +447,7 @@ class SliderCommand extends AgentDeviceCommand {
     final action = args.first == 'increment' || args.first == 'decrement'
         ? args.first
         : 'increment';
-    final targetArgs =
-        (action == args.first) ? args.sublist(1) : args;
+    final targetArgs = (action == args.first) ? args.sublist(1) : args;
     final target = InteractionTarget.parseArgs(targetArgs);
     final device = await openAgentDevice();
     if (positionRaw != null) {
@@ -462,10 +462,9 @@ class SliderCommand extends AgentDeviceCommand {
         normalizedPosition: position,
         interactionTarget: target,
       );
-      emitResult(
-        {'adjusted': position},
-        humanFormat: (_) => 'slider set to $position',
-      );
+      emitResult({
+        'adjusted': position,
+      }, humanFormat: (_) => 'slider set to $position');
       return 0;
     }
     await device.adjustSlider(
@@ -473,10 +472,10 @@ class SliderCommand extends AgentDeviceCommand {
       steps: steps,
       interactionTarget: target,
     );
-    emitResult(
-      {'action': action, 'steps': steps},
-      humanFormat: (_) => 'slider $action${steps > 1 ? ' ×$steps' : ''}',
-    );
+    emitResult({
+      'action': action,
+      'steps': steps,
+    }, humanFormat: (_) => 'slider $action${steps > 1 ? ' ×$steps' : ''}');
     return 0;
   }
 }
@@ -541,11 +540,11 @@ class AppStateCommand extends AgentDeviceCommand {
 
 class AppsCommand extends AgentDeviceCommand {
   AppsCommand() {
-    argParser.addOption(
-      'filter',
-      help: 'Filter apps: all | user-installed.',
-      allowed: ['all', 'user-installed'],
-      defaultsTo: 'all',
+    argParser.addFlag(
+      'all',
+      help:
+          'Include system apps in the listing (default: show user-installed apps only).',
+      negatable: false,
     );
   }
 
@@ -557,16 +556,25 @@ class AppsCommand extends AgentDeviceCommand {
 
   @override
   Future<int> run() async {
-    final filterRaw = argResults?['filter'] as String?;
-    final filter = filterRaw == 'user-installed'
-        ? BackendAppListFilter.userInstalled
-        : BackendAppListFilter.all;
+    final showAll = argResults?['all'] == true;
+    final filter = showAll
+        ? BackendAppListFilter.all
+        : BackendAppListFilter.userInstalled;
     final device = await openAgentDevice();
     final apps = await device.listApps(filter: filter);
     emitResult(
       apps.map((a) => a.toJson()).toList(),
       humanFormat: (_) {
-        if (apps.isEmpty) return '(no apps)';
+        if (!asJson) {
+          stderr.writeln(
+            showAll
+                ? 'Showing all apps, including system apps.'
+                : 'Showing user-installed apps. Use --all to include system apps.',
+          );
+        }
+        if (apps.isEmpty) {
+          return showAll ? 'No apps found.' : 'No user-installed apps found.';
+        }
         final buf = StringBuffer();
         for (final a in apps) {
           buf.writeln('${a.id}${a.name == null ? '' : '  (${a.name})'}');

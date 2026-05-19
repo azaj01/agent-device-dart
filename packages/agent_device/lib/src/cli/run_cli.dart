@@ -9,7 +9,6 @@ import 'package:args/command_runner.dart';
 import 'commands/batch_cmd.dart';
 import 'commands/completion_cmd.dart';
 import 'commands/devices_cmd.dart';
-import 'commands/ensure_simulator_cmd.dart';
 import 'commands/install_cmd.dart';
 import 'commands/logs_cmd.dart';
 import 'commands/network_cmd.dart';
@@ -97,7 +96,6 @@ CommandRunner<int> buildCliRunner({String executableName = 'agent-device'}) {
     ..addCommand(GetCommand())
     ..addCommand(IsCommand())
     ..addCommand(WaitCommand())
-    ..addCommand(EnsureSimulatorCommand())
     ..addCommand(InstallCommand())
     ..addCommand(UninstallCommand())
     ..addCommand(ReinstallCommand())

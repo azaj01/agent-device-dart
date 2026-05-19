@@ -146,17 +146,17 @@ AppleFramePerfSample parseAppleFramePerfSample({
       .toList();
   final droppedFrameCount = hitches.length;
 
-  final startMs = DateTime.tryParse(windowStartedAt)?.millisecondsSinceEpoch ?? 0;
+  final startMs =
+      DateTime.tryParse(windowStartedAt)?.millisecondsSinceEpoch ?? 0;
   final endMs = DateTime.tryParse(windowEndedAt)?.millisecondsSinceEpoch ?? 0;
   final sampleWindowMs = (endMs - startMs).clamp(0, double.maxFinite.toInt());
 
   final worstWindows = _buildWorstWindows(hitches, startMs);
 
   return AppleFramePerfSample(
-    droppedFramePercent:
-        totalFrameCount > 0
-            ? roundPercent((droppedFrameCount / totalFrameCount) * 100)
-            : 0,
+    droppedFramePercent: totalFrameCount > 0
+        ? roundPercent((droppedFrameCount / totalFrameCount) * 100)
+        : 0,
     droppedFrameCount: droppedFrameCount,
     totalFrameCount: totalFrameCount,
     sampleWindowMs: sampleWindowMs,
@@ -171,8 +171,9 @@ AppleFramePerfSample parseAppleFramePerfSample({
           .cast<String>()
           .toList(),
     ),
-    frameDeadlineMs:
-        refreshRateHz == null ? null : roundOneDecimal(1000 / refreshRateHz),
+    frameDeadlineMs: refreshRateHz == null
+        ? null
+        : roundOneDecimal(1000 / refreshRateHz),
     refreshRateHz: refreshRateHz,
     worstWindows: worstWindows.isNotEmpty ? worstWindows : null,
   );
@@ -200,7 +201,10 @@ double? _parseAppleDisplayRefreshRate(String? xml) {
     _rememberReferences(row.childElements.toList(), references);
     final cells = row.childElements.toList();
     if (refreshIndex >= cells.length) continue;
-    final rate = resolveXmlNumber(cells[refreshIndex], _numberOnlyRefs(references));
+    final rate = resolveXmlNumber(
+      cells[refreshIndex],
+      _numberOnlyRefs(references),
+    );
     if (rate != null && rate > 0) return rate;
   }
   return null;
@@ -220,10 +224,7 @@ List<_HitchRow> _parseAppleHitchRows(String xml) {
   final indexes = _readHitchSchemaIndexes(doc);
   if (indexes == null) return const [];
   final references = <String, _XmlRef>{};
-  return findAllXmlElements(
-        doc.children,
-        (el) => el.localName == 'row',
-      )
+  return findAllXmlElements(doc.children, (el) => el.localName == 'row')
       .map((row) => _readHitchRow(row, indexes, references))
       .whereType<_HitchRow>()
       .toList();
@@ -252,16 +253,26 @@ _HitchRow? _readHitchRow(
   final cells = row.childElements.toList();
   _rememberReferences(cells, references);
   // Skip system hitches (is-system == 1).
-  final isSystemEl = indexes.isSystem < cells.length ? cells[indexes.isSystem] : null;
-  if (_resolveXmlBoolean(isSystemEl, _numberOnlyRefs(references)) == true) return null;
+  final isSystemEl = indexes.isSystem < cells.length
+      ? cells[indexes.isSystem]
+      : null;
+  if (_resolveXmlBoolean(isSystemEl, _numberOnlyRefs(references)) == true)
+    return null;
 
   final startEl = indexes.start < cells.length ? cells[indexes.start] : null;
-  final durationEl = indexes.duration < cells.length ? cells[indexes.duration] : null;
+  final durationEl = indexes.duration < cells.length
+      ? cells[indexes.duration]
+      : null;
   final startNsRaw = resolveXmlNumber(startEl, _numberOnlyRefs(references));
-  final durationNsRaw = resolveXmlNumber(durationEl, _numberOnlyRefs(references));
+  final durationNsRaw = resolveXmlNumber(
+    durationEl,
+    _numberOnlyRefs(references),
+  );
   if (startNsRaw == null || durationNsRaw == null) return null;
 
-  final processEl = indexes.process < cells.length ? cells[indexes.process] : null;
+  final processEl = indexes.process < cells.length
+      ? cells[indexes.process]
+      : null;
   final proc = _resolveXmlProcess(processEl, references);
 
   return _HitchRow(
@@ -309,14 +320,14 @@ List<AppleFrameDropWindow> _buildWorstWindows(
   }
   if (current.isNotEmpty) windows.add(current);
 
-  final built =
-      windows.map((rows) => _buildWorstWindow(rows, windowStartedAtMs)).toList();
+  final built = windows
+      .map((rows) => _buildWorstWindow(rows, windowStartedAtMs))
+      .toList();
   // Sort by missedDeadlineFrameCount desc, then worstFrameMs desc — take top N.
   built.sort(
-    (a, b) =>
-        b.missedDeadlineFrameCount != a.missedDeadlineFrameCount
-            ? b.missedDeadlineFrameCount.compareTo(a.missedDeadlineFrameCount)
-            : b.worstFrameMs.compareTo(a.worstFrameMs),
+    (a, b) => b.missedDeadlineFrameCount != a.missedDeadlineFrameCount
+        ? b.missedDeadlineFrameCount.compareTo(a.missedDeadlineFrameCount)
+        : b.worstFrameMs.compareTo(a.worstFrameMs),
   );
   final top = built.take(_maxWorstWindows).toList();
   // Re-sort by start offset ascending for output ordering.
@@ -334,10 +345,12 @@ AppleFrameDropWindow _buildWorstWindow(
       .reduce((a, b) => a > b ? a : b);
   final startOffsetMs = (startNs / 1000000).round();
   final rawEndOffsetMs = (endNs / 1000000).round();
-  final endOffsetMs =
-      rawEndOffsetMs < startOffsetMs ? startOffsetMs : rawEndOffsetMs;
-  final worstDurationNs =
-      hitches.map((h) => h.durationNs).reduce((a, b) => a > b ? a : b);
+  final endOffsetMs = rawEndOffsetMs < startOffsetMs
+      ? startOffsetMs
+      : rawEndOffsetMs;
+  final worstDurationNs = hitches
+      .map((h) => h.durationNs)
+      .reduce((a, b) => a > b ? a : b);
   final clampedStart = startOffsetMs < 0 ? 0 : startOffsetMs;
   return AppleFrameDropWindow(
     startOffsetMs: clampedStart,
@@ -414,8 +427,9 @@ bool? _resolveXmlBoolean(
   final pid = pidRaw?.toInt();
   // fmt attribute has the form "AppName (1234)" — strip the trailing PID.
   final fmt = (element.getAttribute('fmt') ?? '').trim();
-  final name =
-      fmt.isEmpty ? '' : fmt.replaceFirst(RegExp(r'\s+\(\d+\)$'), '').trim();
+  final name = fmt.isEmpty
+      ? ''
+      : fmt.replaceFirst(RegExp(r'\s+\(\d+\)$'), '').trim();
   if (pid == null && name.isEmpty) return null;
   return (pid: pid, name: name.isNotEmpty ? name : null);
 }

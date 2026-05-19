@@ -43,7 +43,8 @@ class RecordStartCommand extends AgentDeviceCommand {
   String get name => 'start';
 
   @override
-  String get invocation => '${runner!.executableName} record start <outPath> [options]';
+  String get invocation =>
+      '${runner!.executableName} record start <outPath> [options]';
 
   @override
   String get description =>
@@ -82,7 +83,8 @@ class RecordStopCommand extends AgentDeviceCommand {
   String get name => 'stop';
 
   @override
-  String get invocation => '${runner!.executableName} record stop <outPath> [options]';
+  String get invocation =>
+      '${runner!.executableName} record stop <outPath> [options]';
 
   @override
   String get description =>

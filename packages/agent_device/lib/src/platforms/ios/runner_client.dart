@@ -212,18 +212,28 @@ class IosRunnerClient {
   /// the runner via `xcodebuild build-for-testing` then retry. Device
   /// builds require a provisioning profile and are NOT auto-built — they
   /// still surface the manual hint.
-  static Future<File> _ensureXctestrun(
+  ///
+  /// Returns both the xctestrun template and the resolved products dir
+  /// (which may differ from the input when auto-build places output at
+  /// the project root rather than the CWD).
+  static Future<({File template, String productsDir})> _ensureXctestrun(
     String productsDir, {
     IosRunnerKind kind = IosRunnerKind.simulator,
   }) async {
     try {
-      return findXctestrun(productsDir, kind: kind);
+      return (
+        template: findXctestrun(productsDir, kind: kind),
+        productsDir: productsDir,
+      );
     } on AppError {
       if (kind == IosRunnerKind.device) rethrow;
     }
     final projectRoot = await _findProjectRoot();
     if (projectRoot == null) {
-      return findXctestrun(productsDir, kind: kind);
+      return (
+        template: findXctestrun(productsDir, kind: kind),
+        productsDir: productsDir,
+      );
     }
     // The bundled native asset layout has AgentDeviceRunner/ directly inside
     // the ios-runner dir; the repo layout has ios-runner/AgentDeviceRunner/.
@@ -241,9 +251,13 @@ class IosRunnerClient {
       );
     }
     if (!Directory(projectPath).existsSync()) {
-      return findXctestrun(productsDir, kind: kind);
+      return (
+        template: findXctestrun(productsDir, kind: kind),
+        productsDir: productsDir,
+      );
     }
-    final derivedDataPath = p.join(projectRoot, 'build');
+    final buildSubdir = kind == IosRunnerKind.device ? 'build-device' : 'build';
+    final derivedDataPath = p.join(projectRoot, buildSubdir);
     final progress = logger.progress('[runner] auto-building iOS runner');
     final result = await runCmd('xcodebuild', [
       'build-for-testing',
@@ -269,7 +283,11 @@ class IosRunnerClient {
       );
     }
     progress.finish(showTiming: true);
-    return findXctestrun(productsDir, kind: kind);
+    final builtProductsDir = p.join(derivedDataPath, 'Build', 'Products');
+    return (
+      template: findXctestrun(builtProductsDir, kind: kind),
+      productsDir: builtProductsDir,
+    );
   }
 
   static Future<String?> _findProjectRoot() async {
@@ -354,14 +372,15 @@ class IosRunnerClient {
     startupTimeout ??= kind == IosRunnerKind.device
         ? const Duration(seconds: 180)
         : const Duration(seconds: 60);
-    final productsDir = resolveBuildProductsDir(
+    final initialProductsDir = resolveBuildProductsDir(
       override: buildProductsDirOverride,
       kind: kind,
     );
-    final template = await _ensureXctestrun(productsDir, kind: kind);
+    final ensured = await _ensureXctestrun(initialProductsDir, kind: kind);
+    final productsDir = ensured.productsDir;
     final port = await pickFreePort();
     final xctestrunPath = await prepareXctestrunWithEnv(
-      template: template,
+      template: ensured.template,
       productsDir: productsDir,
       envVars: {'AGENT_DEVICE_RUNNER_PORT': '$port'},
     );

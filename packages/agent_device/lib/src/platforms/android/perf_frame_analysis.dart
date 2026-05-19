@@ -78,7 +78,7 @@ List<AndroidFrameStatsRow> selectDroppedFrameRows({
     final sorted = [...frames]
       ..sort((a, b) => b.durationNs.compareTo(a.durationNs));
     return (sorted.take(summaryDroppedFrameCount).toList()
-          ..sort((a, b) => a.intendedVsyncNs.compareTo(b.intendedVsyncNs)));
+      ..sort((a, b) => a.intendedVsyncNs.compareTo(b.intendedVsyncNs)));
   }
   if (frameDeadlineNs == null) return [];
   return frames.where((f) => f.durationNs > frameDeadlineNs).toList();
@@ -99,8 +99,7 @@ List<AndroidFrameDropWindow> buildWorstFrameDropWindows({
   for (final frame in frames) {
     final previous = current.isEmpty ? null : current.last;
     if (previous == null ||
-        frame.intendedVsyncNs - previous.frameCompletedNs <=
-            _jankWindowGapNs) {
+        frame.intendedVsyncNs - previous.frameCompletedNs <= _jankWindowGapNs) {
       current.add(frame);
       continue;
     }
@@ -121,10 +120,9 @@ List<AndroidFrameDropWindow> buildWorstFrameDropWindows({
           )
           .toList()
         ..sort(
-          (a, b) =>
-              a.missedDeadlineFrameCount != b.missedDeadlineFrameCount
-                  ? b.missedDeadlineFrameCount - a.missedDeadlineFrameCount
-                  : b.worstFrameMs.compareTo(a.worstFrameMs),
+          (a, b) => a.missedDeadlineFrameCount != b.missedDeadlineFrameCount
+              ? b.missedDeadlineFrameCount - a.missedDeadlineFrameCount
+              : b.worstFrameMs.compareTo(a.worstFrameMs),
         );
 
   return (built.take(_maxWorstWindows).toList()
@@ -137,39 +135,37 @@ AndroidFrameDropWindow _buildFrameDropWindow({
   required int measuredAtMs,
   int? uptimeMs,
 }) {
-  final startNs = frames.map((f) => f.intendedVsyncNs).reduce(
-    (a, b) => a < b ? a : b,
-  );
-  final endNs = frames.map((f) => f.frameCompletedNs).reduce(
-    (a, b) => a > b ? a : b,
-  );
+  final startNs = frames
+      .map((f) => f.intendedVsyncNs)
+      .reduce((a, b) => a < b ? a : b);
+  final endNs = frames
+      .map((f) => f.frameCompletedNs)
+      .reduce((a, b) => a > b ? a : b);
   final startOffsetRaw = ((startNs - windowStartNs) / 1000000).round();
   final startOffsetMs = startOffsetRaw < 0 ? 0 : startOffsetRaw;
   final endOffsetMsRaw = ((endNs - windowStartNs) / 1000000).round();
-  final endOffsetMs =
-      endOffsetMsRaw < startOffsetMs ? startOffsetMs : endOffsetMsRaw;
+  final endOffsetMs = endOffsetMsRaw < startOffsetMs
+      ? startOffsetMs
+      : endOffsetMsRaw;
   final int? base = uptimeMs != null ? measuredAtMs - uptimeMs : null;
   return AndroidFrameDropWindow(
     startOffsetMs: startOffsetMs,
     endOffsetMs: endOffsetMs,
-    startAt:
-        base == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(
-              base + (startNs / 1000000).round(),
-              isUtc: true,
-            ).toIso8601String(),
-    endAt:
-        base == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(
-              base + (endNs / 1000000).round(),
-              isUtc: true,
-            ).toIso8601String(),
+    startAt: base == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(
+            base + (startNs / 1000000).round(),
+            isUtc: true,
+          ).toIso8601String(),
+    endAt: base == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(
+            base + (endNs / 1000000).round(),
+            isUtc: true,
+          ).toIso8601String(),
     missedDeadlineFrameCount: frames.length,
     worstFrameMs: roundOneDecimal(
-      frames.map((f) => f.durationNs).reduce((a, b) => a > b ? a : b) /
-          1000000,
+      frames.map((f) => f.durationNs).reduce((a, b) => a > b ? a : b) / 1000000,
     ),
   );
 }

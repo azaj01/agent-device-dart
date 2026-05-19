@@ -188,15 +188,13 @@ List<IosDeviceProcessInfo> parseIosDeviceProcessesPayload(Object? payload) {
   final out = <IosDeviceProcessInfo>[];
   for (final entry in processes) {
     if (entry is! Map) continue;
-    final executable =
-        entry['executable'] is String
-            ? (entry['executable'] as String).trim()
-            : '';
+    final executable = entry['executable'] is String
+        ? (entry['executable'] as String).trim()
+        : '';
     final pidRaw = entry['processIdentifier'];
-    final entryPid =
-        pidRaw is int
-            ? pidRaw
-            : (pidRaw is double && pidRaw.isFinite ? pidRaw.toInt() : null);
+    final entryPid = pidRaw is int
+        ? pidRaw
+        : (pidRaw is double && pidRaw.isFinite ? pidRaw.toInt() : null);
     if (executable.isEmpty || entryPid == null) continue;
     out.add(IosDeviceProcessInfo(executable: executable, pid: entryPid));
   }

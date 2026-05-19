@@ -104,7 +104,15 @@ String? _fromRepoRoot(String relativePath) {
   if (root == null) return null;
   // Check lib/src/native/ first (package layout)
   final inLib = File(
-    p.join(root, 'packages', 'agent_device', 'lib', 'src', 'native', relativePath),
+    p.join(
+      root,
+      'packages',
+      'agent_device',
+      'lib',
+      'src',
+      'native',
+      relativePath,
+    ),
   );
   if (inLib.existsSync()) return inLib.path;
   // Check top-level (repo development layout)

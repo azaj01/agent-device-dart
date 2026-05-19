@@ -395,33 +395,37 @@ void main() {
       expect(windows.first.worstFrameMs, 30); // ~30ms
     });
 
-    test('splits frames separated by more than 500ms into separate windows', () {
-      final frames = [
-        const AndroidFrameStatsRow(
-          intendedVsyncNs: 1000000000,
-          frameCompletedNs: 1020000000,
-          durationNs: 20000000,
-        ),
-        // Gap: 1020000000 → 1600000001 = 580ms > 500ms threshold
-        const AndroidFrameStatsRow(
-          intendedVsyncNs: 1600000001,
-          frameCompletedNs: 1630000000,
-          durationNs: 29999999,
-        ),
-      ];
-      final windows = buildWorstFrameDropWindows(
-        frames: frames,
-        windowStartNs: 1000000000,
-        measuredAtMs: 2000,
-      );
-      expect(windows.length, 2);
-    });
+    test(
+      'splits frames separated by more than 500ms into separate windows',
+      () {
+        final frames = [
+          const AndroidFrameStatsRow(
+            intendedVsyncNs: 1000000000,
+            frameCompletedNs: 1020000000,
+            durationNs: 20000000,
+          ),
+          // Gap: 1020000000 → 1600000001 = 580ms > 500ms threshold
+          const AndroidFrameStatsRow(
+            intendedVsyncNs: 1600000001,
+            frameCompletedNs: 1630000000,
+            durationNs: 29999999,
+          ),
+        ];
+        final windows = buildWorstFrameDropWindows(
+          frames: frames,
+          windowStartNs: 1000000000,
+          measuredAtMs: 2000,
+        );
+        expect(windows.length, 2);
+      },
+    );
 
     test('caps result at 3 worst windows', () {
       // Build 4 isolated jank windows
       final frames = <AndroidFrameStatsRow>[];
       for (int i = 0; i < 4; i++) {
-        final base = 1000000000 + i * 600000000; // 600ms gaps — separate windows
+        final base =
+            1000000000 + i * 600000000; // 600ms gaps — separate windows
         frames.add(
           AndroidFrameStatsRow(
             intendedVsyncNs: base,

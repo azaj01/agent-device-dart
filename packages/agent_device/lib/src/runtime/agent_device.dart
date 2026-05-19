@@ -8,6 +8,7 @@ library;
 import 'dart:io';
 
 import 'package:agent_device/src/backend/backend.dart';
+import 'package:agent_device/src/commands/interaction_targeting.dart';
 import 'package:agent_device/src/platforms/platform_selector.dart';
 import 'package:agent_device/src/selectors/selectors.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
@@ -196,6 +197,7 @@ class AgentDevice {
     bool? overlayRefs,
     bool? fullscreen,
     int? maxSize,
+    bool? stabilize,
   }) async {
     if (maxSize != null && maxSize < 1) {
       throw AppError(
@@ -210,6 +212,7 @@ class AgentDevice {
         overlayRefs: overlayRefs,
         fullscreen: fullscreen,
         maxSize: maxSize,
+        stabilize: stabilize,
       ),
     );
     if (maxSize != null) {
@@ -229,7 +232,13 @@ class AgentDevice {
   ///
   /// [PointTarget]s are returned as-is. [RefTarget] and [SelectorTarget]
   /// trigger a snapshot (unless one is supplied via [snapshotOverride]) and
-  /// look up the matching node, then return `centerOfRect(node.rect)`.
+  /// look up the matching node. The matched node is then passed through the
+  /// semantic touch target resolution policy, which:
+  /// 1. Prefers same-rect descendants (drills down to specific elements)
+  /// 2. Checks if the node itself is a semantic touch target
+  /// 3. Climbs to hittable ancestors if needed
+  /// 4. Rejects overly broad ancestors (e.g. screen-filling containers)
+  /// Finally returns `centerOfRect(node.rect)`.
   /// Throws [AppError] with `AMBIGUOUS_MATCH` or `COMMAND_FAILED` when
   /// resolution fails.
   Future<Point> resolveTarget(
@@ -238,7 +247,14 @@ class AgentDevice {
   }) async {
     if (target is PointTarget) return target.point;
     final snap = snapshotOverride ?? await snapshot();
-    final node = await _resolveNode(target, snap);
+    var node = await _resolveNode(target, snap);
+
+    // Apply the semantic touch target resolution policy.
+    final nodes = _nodesOf(snap);
+    if (nodes.isNotEmpty) {
+      node = resolveActionableTouchNode(nodes, node);
+    }
+
     final rect = node.rect;
     if (rect == null) {
       throw AppError(
@@ -372,10 +388,7 @@ class AgentDevice {
         final node = await _resolveNode(interactionTarget, snap);
         final r = node.rect;
         if (r != null) {
-          resolved = Point(
-            x: r.x + r.width / 2,
-            y: r.y + r.height / 2,
-          );
+          resolved = Point(x: r.x + r.width / 2, y: r.y + r.height / 2);
           elementRect = r;
         }
       }

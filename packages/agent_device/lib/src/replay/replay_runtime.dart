@@ -549,7 +549,8 @@ Future<List<String>> dispatchReplayAction({
       final position = positionRaw is num ? positionRaw.toDouble() : null;
       final stepsRaw = flags['steps'];
       final steps = stepsRaw is num ? stepsRaw.toInt() : 1;
-      final action = positionals.isNotEmpty &&
+      final action =
+          positionals.isNotEmpty &&
               (positionals.first == 'increment' ||
                   positionals.first == 'decrement')
           ? positionals.first

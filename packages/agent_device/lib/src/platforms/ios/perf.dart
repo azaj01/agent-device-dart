@@ -417,9 +417,7 @@ Future<_FramePerfCapture> _captureIosDeviceFramePerf({
   required String appBundleId,
   required List<int> targetPids,
 }) async {
-  final tmp = await Directory.systemTemp.createTemp(
-    'ad-ios-frame-perf-',
-  );
+  final tmp = await Directory.systemTemp.createTemp('ad-ios-frame-perf-');
   final tracePath = p.join(tmp.path, 'animation-hitches.trace');
   final hitchesPath = p.join(tmp.path, 'hitches.xml');
   final frameLifetimesPath = p.join(tmp.path, 'frame-lifetimes.xml');
@@ -465,8 +463,9 @@ Future<_FramePerfCapture> _captureIosDeviceFramePerf({
       windowEndedAt: record.endedAt,
       hitchesXml: await File(hitchesPath).readAsString(),
       frameLifetimesXml: await File(frameLifetimesPath).readAsString(),
-      displayInfoXml:
-          hasDisplayInfo ? await File(displayInfoPath).readAsString() : null,
+      displayInfoXml: hasDisplayInfo
+          ? await File(displayInfoPath).readAsString()
+          : null,
     );
   } finally {
     try {
@@ -550,9 +549,11 @@ Future<_TraceRecordAttempt> _runIosDeviceTraceRecord(
   String tracePath,
 ) async {
   _TraceRecordAttempt? lastAttempt;
-  for (var attempt = 1;
-      attempt <= _iosDeviceTraceRecordMaxAttempts;
-      attempt += 1) {
+  for (
+    var attempt = 1;
+    attempt <= _iosDeviceTraceRecordMaxAttempts;
+    attempt += 1
+  ) {
     if (attempt > 1) {
       // Clean up any partial trace from the failed attempt.
       try {
@@ -609,7 +610,9 @@ Future<void> _assertUsableTraceOutput({
   if (entityType == FileSystemEntityType.directory) {
     hasTrace = (await Directory(tracePath).list().length) > 0;
   } else {
-    final stat = await File(tracePath).stat().catchError((_) => FileStat.statSync('/dev/null'));
+    final stat = await File(
+      tracePath,
+    ).stat().catchError((_) => FileStat.statSync('/dev/null'));
     hasTrace = stat.size > 0;
   }
   if (hasTrace) return;

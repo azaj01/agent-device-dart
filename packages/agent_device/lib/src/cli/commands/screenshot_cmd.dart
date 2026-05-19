@@ -21,6 +21,13 @@ class ScreenshotCommand extends AgentDeviceCommand {
             '<N> pixels (positive integer). Skipped if the image already '
             'fits.',
         valueHelp: 'N',
+      )
+      ..addFlag(
+        'no-stabilize',
+        help:
+            'Skip frame stabilization (demo mode, animation delays). '
+            'Useful for low-latency capture loops on Android.',
+        negatable: false,
       );
   }
 
@@ -41,6 +48,8 @@ class ScreenshotCommand extends AgentDeviceCommand {
     }
     final outPath = args.first;
     final fullscreen = argResults?['fullscreen'] == true ? true : null;
+    final noStabilize = argResults?['no-stabilize'] == true;
+    final stabilize = noStabilize ? false : null;
     final maxSizeRaw = argResults?['max-size'] as String?;
     final maxSize = maxSizeRaw == null ? null : int.tryParse(maxSizeRaw);
     if (maxSizeRaw != null && (maxSize == null || maxSize < 1)) {
@@ -54,6 +63,7 @@ class ScreenshotCommand extends AgentDeviceCommand {
       outPath,
       fullscreen: fullscreen,
       maxSize: maxSize,
+      stabilize: stabilize,
     );
     emitResult({
       'path': result?.path ?? outPath,

@@ -323,12 +323,6 @@ abstract class Backend {
     BackendDeviceTarget? target,
   ]) async => unsupported('bootDevice');
 
-  /// Ensure a simulator exists and is ready.
-  Future<BackendEnsureSimulatorResult> ensureSimulator(
-    BackendCommandContext ctx,
-    BackendEnsureSimulatorOptions options,
-  ) async => unsupported('ensureSimulator');
-
   /// Resolve an install source to a concrete location (e.g. expand a URL).
   Future<BackendInstallSource> resolveInstallSource(
     BackendCommandContext ctx,

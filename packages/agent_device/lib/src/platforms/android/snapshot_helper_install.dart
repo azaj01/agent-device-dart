@@ -28,8 +28,14 @@ void resetAndroidSnapshotHelperInstallCache() {
   _installedSnapshotHelpers.clear();
 }
 
-String? _installCacheKey(String? deviceKey, String packageName, int versionCode) {
-  return deviceKey != null ? '$deviceKey\x00$packageName\x00$versionCode' : null;
+String? _installCacheKey(
+  String? deviceKey,
+  String packageName,
+  int versionCode,
+) {
+  return deviceKey != null
+      ? '$deviceKey\x00$packageName\x00$versionCode'
+      : null;
 }
 
 /// Ensure the snapshot helper APK is installed on the device and up to date.

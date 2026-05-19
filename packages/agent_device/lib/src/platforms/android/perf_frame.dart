@@ -27,7 +27,13 @@ Future<AndroidFramePerfSample> sampleAndroidFramePerf(
   try {
     final result = await runCmd(
       'adb',
-      adbArgs(serial, ['shell', 'dumpsys', 'gfxinfo', packageName, 'framestats']),
+      adbArgs(serial, [
+        'shell',
+        'dumpsys',
+        'gfxinfo',
+        packageName,
+        'framestats',
+      ]),
       const ExecOptions(timeoutMs: _androidFramePerfTimeoutMs),
     );
     final sample = parseAndroidFramePerfSample(

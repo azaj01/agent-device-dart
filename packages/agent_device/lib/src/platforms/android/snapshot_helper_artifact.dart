@@ -121,7 +121,10 @@ resolveBundledAndroidSnapshotHelperArtifact() async {
       final manifest = parseAndroidSnapshotHelperManifest(
         jsonDecode(File(manifestPath).readAsStringSync()),
       );
-      return AndroidSnapshotHelperArtifact(apkPath: apkPath, manifest: manifest);
+      return AndroidSnapshotHelperArtifact(
+        apkPath: apkPath,
+        manifest: manifest,
+      );
     } catch (_) {}
   }
 
@@ -150,17 +153,24 @@ Future<AndroidSnapshotHelperArtifact?> _autoBuildHelperIfPossible() async {
   final sourceAlt = Directory(p.join(helperDir, 'src'));
   if (!sourceDir.existsSync() && !sourceAlt.existsSync()) return null;
 
-  final packageScript = File(p.join(helperDir, 'package-android-snapshot-helper.sh'));
-  final buildScript = File(p.join(helperDir, 'build-android-snapshot-helper.sh'));
+  final packageScript = File(
+    p.join(helperDir, 'package-android-snapshot-helper.sh'),
+  );
+  final buildScript = File(
+    p.join(helperDir, 'build-android-snapshot-helper.sh'),
+  );
   if (!packageScript.existsSync() && !buildScript.existsSync()) return null;
 
-  final sdkRoot = Platform.environment['ANDROID_HOME'] ??
+  final sdkRoot =
+      Platform.environment['ANDROID_HOME'] ??
       Platform.environment['ANDROID_SDK_ROOT'];
   if (sdkRoot == null || sdkRoot.isEmpty) return null;
 
   final distDir = p.join(helperDir, 'dist');
   try {
-    final progress = logger.progress('[snapshot] auto-building Android snapshot helper APK');
+    final progress = logger.progress(
+      '[snapshot] auto-building Android snapshot helper APK',
+    );
     final script = packageScript.existsSync() ? packageScript : buildScript;
     final args = packageScript.existsSync()
         ? [script.path, '0.0.1', 'local', distDir]

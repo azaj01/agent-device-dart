@@ -228,24 +228,19 @@ void main() {
       // its own jank window.
       final rows = StringBuffer();
       // Start times spaced > 500ms apart so each forms its own window.
-      final starts = [
-        100000000,
-        700000000,
-        1300000000,
-        1900000000,
-      ];
+      final starts = [100000000, 700000000, 1300000000, 1900000000];
       for (var i = 0; i < starts.length; i++) {
         rows.write('<row>');
-        rows.write(
-          '<start-time fmt="x">${starts[i]}</start-time>',
-        );
+        rows.write('<start-time fmt="x">${starts[i]}</start-time>');
         rows.write('<duration fmt="x">37500000</duration>');
         rows.write(
           '<process fmt="App (4001)"><pid fmt="4001">4001</pid></process>',
         );
         rows.write('<boolean fmt="No">0</boolean>');
-        rows.write('<uint32>$i</uint32><string>x</string>'
-            '<display-name>D</display-name><string></string>');
+        rows.write(
+          '<uint32>$i</uint32><string>x</string>'
+          '<display-name>D</display-name><string></string>',
+        );
         rows.write('</row>');
       }
       final xml = [

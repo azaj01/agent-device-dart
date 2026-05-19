@@ -28,7 +28,19 @@ const _androidScreenshotSettleDelayMs = 1000;
 /// Enables demo mode for consistent status bar appearance, waits for
 /// transient UI elements to settle, captures via `adb exec-out screencap -p`,
 /// and then disables demo mode.
-Future<void> screenshotAndroid(String serial, String outPath) async {
+///
+/// If [stabilize] is false, skips demo mode and animation delays for
+/// low-latency capture loops.
+Future<void> screenshotAndroid(
+  String serial,
+  String outPath, [
+  bool? stabilize,
+]) async {
+  if (stabilize == false) {
+    await _captureAndroidScreenshot(serial, outPath);
+    return;
+  }
+
   await _enableAndroidDemoMode(serial);
   try {
     await sleep(const Duration(milliseconds: _androidScreenshotSettleDelayMs));

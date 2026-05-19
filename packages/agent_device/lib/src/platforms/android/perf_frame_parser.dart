@@ -68,6 +68,7 @@ class AndroidFramePerfSample {
   final double? refreshRateHz;
   final String? windowStartedAt;
   final String? windowEndedAt;
+
   /// Always `'estimated-from-device-uptime'` when set.
   final String? timestampSource;
   final String measuredAt;
@@ -119,7 +120,9 @@ AndroidFramePerfSample parseAndroidFramePerfSample(
     summaryDroppedFrameCount: summary?.droppedFrameCount,
   );
   final sampleWindowMs =
-      summary?.sampleWindowMs ?? timing.sampleWindowMs ?? _computeFrameWindowMs(frames);
+      summary?.sampleWindowMs ??
+      timing.sampleWindowMs ??
+      _computeFrameWindowMs(frames);
   final counts = _buildAndroidFrameCounts(summary, frames, droppedFrames);
   final worstWindows = _buildAndroidWorstWindows(
     droppedFrames: droppedFrames,
@@ -141,16 +144,17 @@ AndroidFramePerfSample parseAndroidFramePerfSample(
     measuredAt: measuredAt,
     method: androidFrameSampleMethod,
     source: summary != null ? 'android-gfxinfo-summary' : 'framestats-rows',
-    worstWindows:
-        (worstWindows != null && worstWindows.isNotEmpty) ? worstWindows : null,
+    worstWindows: (worstWindows != null && worstWindows.isNotEmpty)
+        ? worstWindows
+        : null,
   );
 }
 
-void _assertAndroidGfxInfoProcessFound(
-  String stdout,
-  String packageName,
-) {
-  if (!RegExp(r'no process found for:', caseSensitive: false).hasMatch(stdout)) {
+void _assertAndroidGfxInfoProcessFound(String stdout, String packageName) {
+  if (!RegExp(
+    r'no process found for:',
+    caseSensitive: false,
+  ).hasMatch(stdout)) {
     return;
   }
   throw AppError(
@@ -214,8 +218,9 @@ _AndroidFrameCounts _buildAndroidFrameCounts(
   if (summary != null) {
     droppedFramePercent = summary.droppedFramePercent;
   } else if (totalFrameCount > 0) {
-    droppedFramePercent =
-        roundPercent((droppedFrameCount / totalFrameCount) * 100);
+    droppedFramePercent = roundPercent(
+      (droppedFrameCount / totalFrameCount) * 100,
+    );
   } else {
     droppedFramePercent = 0;
   }
@@ -262,9 +267,7 @@ List<AndroidFrameStatsRow> _parseAndroidFrameStatsRows(String text) {
 
     final cells = line.split(',').map((c) => c.trim()).toList();
     if (_isFrameStatsHeader(cells)) {
-      columnIndex = {
-        for (int i = 0; i < cells.length; i++) cells[i]: i,
-      };
+      columnIndex = {for (int i = 0; i < cells.length; i++) cells[i]: i};
       continue;
     }
     final row = _parseFrameStatsDataRow(cells, columnIndex);
@@ -285,8 +288,16 @@ AndroidFrameStatsRow? _parseFrameStatsDataRow(
 ) {
   if (columnIndex == null || cells.length < columnIndex.length) return null;
   final flags = _readFrameStatsInt(cells, columnIndex, 'Flags');
-  final intendedVsyncNs = _readFrameStatsInt(cells, columnIndex, 'IntendedVsync');
-  final frameCompletedNs = _readFrameStatsInt(cells, columnIndex, 'FrameCompleted');
+  final intendedVsyncNs = _readFrameStatsInt(
+    cells,
+    columnIndex,
+    'IntendedVsync',
+  );
+  final frameCompletedNs = _readFrameStatsInt(
+    cells,
+    columnIndex,
+    'FrameCompleted',
+  );
   if (flags != 0 ||
       intendedVsyncNs == null ||
       frameCompletedNs == null ||
@@ -317,8 +328,13 @@ int? _readFrameStatsInt(
 }
 
 _AndroidFrameSummary? _parseAndroidFrameSummary(String text) {
-  final summaryText = text.split(RegExp(r'\nProfile data in ms:\n', caseSensitive: false)).first;
-  final totalFrameCount = _matchSummaryInteger(summaryText, 'Total frames rendered');
+  final summaryText = text
+      .split(RegExp(r'\nProfile data in ms:\n', caseSensitive: false))
+      .first;
+  final totalFrameCount = _matchSummaryInteger(
+    summaryText,
+    'Total frames rendered',
+  );
   final jankyFrameMatch = RegExp(
     r'^\s*Janky frames:\s*([0-9][0-9,]*)\s*\(([0-9.]+)%\)',
     multiLine: true,
@@ -350,10 +366,7 @@ _AndroidFrameSummary? _parseAndroidFrameSummary(String text) {
   );
 }
 
-int? _parseAndroidFrameSummaryWindowMs({
-  int? uptimeMs,
-  int? statsSinceNs,
-}) {
+int? _parseAndroidFrameSummaryWindowMs({int? uptimeMs, int? statsSinceNs}) {
   if (uptimeMs == null || statsSinceNs == null) return null;
   final windowMs = uptimeMs - (statsSinceNs / 1000000).round();
   return windowMs >= 0 ? windowMs : null;
@@ -404,12 +417,12 @@ _AndroidFrameTiming _buildAndroidFrameTiming({
 ) {
   if (frames.isEmpty) return (firstFrameNs: null, lastFrameNs: null);
   return (
-    firstFrameNs: frames.map((f) => f.intendedVsyncNs).reduce(
-      (a, b) => a < b ? a : b,
-    ),
-    lastFrameNs: frames.map((f) => f.frameCompletedNs).reduce(
-      (a, b) => a > b ? a : b,
-    ),
+    firstFrameNs: frames
+        .map((f) => f.intendedVsyncNs)
+        .reduce((a, b) => a < b ? a : b),
+    lastFrameNs: frames
+        .map((f) => f.frameCompletedNs)
+        .reduce((a, b) => a > b ? a : b),
   );
 }
 
@@ -426,8 +439,10 @@ String? _buildAndroidFrameWindowEnd({
   int? lastFrameNs,
 }) {
   if (summaryStartNs != null) {
-    return DateTime.fromMillisecondsSinceEpoch(measuredAtMs, isUtc: true)
-        .toIso8601String();
+    return DateTime.fromMillisecondsSinceEpoch(
+      measuredAtMs,
+      isUtc: true,
+    ).toIso8601String();
   }
   if (lastFrameNs == null) return null;
   return DateTime.fromMillisecondsSinceEpoch(

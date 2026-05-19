@@ -20,8 +20,8 @@ import 'ui_hierarchy.dart';
 
 const _uiHierarchyDumpTimeoutMs = 8000;
 const _helperInstallTimeoutMs = 30000;
-const _helperCommandTimeoutMs =
-    _uiHierarchyDumpTimeoutMs + androidSnapshotHelperCommandOverheadMs;
+const _helperCaptureTimeoutMs = 5000;
+const _helperCommandTimeoutMs = 8000;
 
 /// Options for Android snapshot capture.
 class AndroidSnapshotOptions {
@@ -206,7 +206,7 @@ _captureAndroidUiHierarchyOnce(
           packageName: artifact.manifest.packageName,
           instrumentationRunner: artifact.manifest.instrumentationRunner,
           waitForIdleTimeoutMs: androidSnapshotHelperWaitForIdleTimeoutMs,
-          timeoutMs: _uiHierarchyDumpTimeoutMs,
+          timeoutMs: _helperCaptureTimeoutMs,
           commandTimeoutMs: _helperCommandTimeoutMs,
         ),
       );
@@ -243,6 +243,8 @@ _captureAndroidUiHierarchyOnce(
         versionCode: artifact.manifest.versionCode,
       );
       if (isUiAutomationConflict(error)) rethrow;
+      final busyError = _formatAndroidSnapshotHelperBusyError(error);
+      if (busyError != null) throw busyError;
       final reason = (error is AppError) ? error.message : error.toString();
       logger.trace(
         '[snapshot] helper failed, falling back to uiautomator: $reason',
@@ -267,7 +269,7 @@ _captureAndroidUiHierarchyOnce(
           packageName: androidSnapshotHelperPackage,
           instrumentationRunner: androidSnapshotHelperRunner,
           waitForIdleTimeoutMs: androidSnapshotHelperWaitForIdleTimeoutMs,
-          timeoutMs: _uiHierarchyDumpTimeoutMs,
+          timeoutMs: _helperCaptureTimeoutMs,
           commandTimeoutMs: _helperCommandTimeoutMs,
         ),
       );
@@ -493,6 +495,37 @@ AppError _uiAutomatorKilledError(String stdout, String stderr) {
       'reason': 'uiautomator_killed',
     },
   );
+}
+
+AppError? _formatAndroidSnapshotHelperBusyError(Object error) {
+  if (error is! AppError) return null;
+  if (!_isStructuredHelperTimeout(error)) return null;
+  const hint =
+      'Android accessibility snapshots can be blocked by busy or continuously changing app UI. Use screenshot as visual truth after this timeout and report the busy UI if it persists.';
+  return AppError(
+    error.code,
+    '${error.message}. Stock UIAutomator fallback was skipped because this usually means the Android accessibility tree is busy or stalled.',
+    details: {...(error.details ?? {}), 'hint': hint},
+  );
+}
+
+bool _isStructuredHelperTimeout(AppError error) {
+  if (!error.message.toLowerCase().contains('timed out')) return false;
+  final details = error.details;
+  if (details is! Map<String, Object?>) return false;
+  // Check for timeout indicators in the helper response
+  final helperMessage = _readHelperMessage(details);
+  if (helperMessage != null && helperMessage.toLowerCase().contains('timeout'))
+    return true;
+  return error.message.toLowerCase().contains('timeout');
+}
+
+String? _readHelperMessage(Map<String, Object?> details) {
+  final message = details['message'];
+  if (message is String && message.trim().isNotEmpty && message != 'null') {
+    return message.trim();
+  }
+  return null;
 }
 
 /// True when the error looks like a UiAutomation conflict — another process

@@ -729,9 +729,7 @@ class IosBackend extends Backend {
               bundleId,
               targetPids: targetPids,
               targetProcessNames: targetNames,
-            ).then<AppleFramePerfSample?>(
-              (s) => s,
-            ).catchError((_) => null)
+            ).then<AppleFramePerfSample?>((s) => s).catchError((_) => null)
           : Future<AppleFramePerfSample?>.value(null);
 
       final sample = await sampleIosDevicePerfMetrics(

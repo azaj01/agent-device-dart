@@ -216,7 +216,12 @@ void main() {
     late AgentDevice device;
 
     setUp(() async {
-      final snap = _makeSnapshot([_yesNode, _noNode, _questionNode, _buttonNode]);
+      final snap = _makeSnapshot([
+        _yesNode,
+        _noNode,
+        _questionNode,
+        _buttonNode,
+      ]);
       device = await _openDevice(snap);
     });
 

@@ -395,11 +395,16 @@ class BackendScreenshotOptions {
   /// step after the backend writes the file.
   final int? maxSize;
 
+  /// When false, skips frame stabilization (demo mode, animation delays).
+  /// Useful for low-latency capture loops on Android.
+  final bool? stabilize;
+
   const BackendScreenshotOptions({
     this.fullscreen,
     this.overlayRefs,
     this.surface,
     this.maxSize,
+    this.stabilize,
   });
 }
 

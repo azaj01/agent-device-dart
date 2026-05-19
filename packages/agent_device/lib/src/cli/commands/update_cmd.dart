@@ -11,7 +11,7 @@ const _packageName = 'agent_device';
 
 class UpdateCommand extends AgentDeviceCommand {
   UpdateCommand({PubUpdater? pubUpdater})
-      : _pubUpdater = pubUpdater ?? PubUpdater();
+    : _pubUpdater = pubUpdater ?? PubUpdater();
 
   final PubUpdater _pubUpdater;
 
@@ -88,15 +88,12 @@ class UpdateCommand extends AgentDeviceCommand {
 
     await _pubUpdater.update(packageName: _packageName);
 
-    emitResult(
-      {
-        'currentVersion': latestVersion,
-        'latestVersion': latestVersion,
-        'upToDate': true,
-        'updated': true,
-      },
-      humanFormat: (_) => 'Updated agent_device to $latestVersion.',
-    );
+    emitResult({
+      'currentVersion': latestVersion,
+      'latestVersion': latestVersion,
+      'upToDate': true,
+      'updated': true,
+    }, humanFormat: (_) => 'Updated agent_device to $latestVersion.');
     return 0;
   }
 }

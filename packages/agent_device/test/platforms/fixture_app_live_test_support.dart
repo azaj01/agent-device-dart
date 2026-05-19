@@ -558,9 +558,7 @@ Future<void> adjustSliderById(
 }) async {
   await expectVisibleId(device, id, timeout: timeout);
   await device.adjustSlider(
-    interactionTarget: InteractionTarget.selector(
-      'id=${jsonEncode(id)}',
-    ),
+    interactionTarget: InteractionTarget.selector('id=${jsonEncode(id)}'),
     normalizedPosition: normalizedPosition,
     action: action,
     steps: steps,

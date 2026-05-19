@@ -1,9 +1,11 @@
 // Port of agent-device/src/platforms/android/device-input-state.ts
 
+import '../../utils/diagnostics.dart';
 import '../../utils/errors.dart';
 import '../../utils/exec.dart';
 import '../../utils/timeouts.dart';
 import 'adb.dart';
+import 'input_ownership.dart';
 
 const int _androidInputTypeClassMask = 0x0000000f;
 const int _androidInputTypeClassText = 0x00000001;
@@ -42,11 +44,19 @@ class AndroidKeyboardState {
   final bool visible;
   final String? inputType;
   final AndroidKeyboardType? type;
+  final String? inputMethodPackage;
+  final String? focusedPackage;
+  final String? focusedResourceId;
+  final AndroidInputOwner inputOwner;
 
   const AndroidKeyboardState({
     required this.visible,
     this.inputType,
     this.type,
+    this.inputMethodPackage,
+    this.focusedPackage,
+    this.focusedResourceId,
+    this.inputOwner = AndroidInputOwner.unknown,
   });
 }
 
@@ -58,6 +68,10 @@ class AndroidKeyboardDismissResult {
   final bool visible;
   final String? inputType;
   final AndroidKeyboardType? type;
+  final String? inputMethodPackage;
+  final String? focusedPackage;
+  final String? focusedResourceId;
+  final AndroidInputOwner inputOwner;
 
   const AndroidKeyboardDismissResult({
     required this.attempts,
@@ -66,6 +80,10 @@ class AndroidKeyboardDismissResult {
     required this.visible,
     this.inputType,
     this.type,
+    this.inputMethodPackage,
+    this.focusedPackage,
+    this.focusedResourceId,
+    this.inputOwner = AndroidInputOwner.unknown,
   });
 }
 
@@ -129,6 +147,10 @@ Future<AndroidKeyboardDismissResult> dismissAndroidKeyboard(
     visible: state.visible,
     inputType: state.inputType,
     type: state.type,
+    inputMethodPackage: state.inputMethodPackage,
+    focusedPackage: state.focusedPackage,
+    focusedResourceId: state.focusedResourceId,
+    inputOwner: state.inputOwner,
   );
 }
 
@@ -158,11 +180,61 @@ AndroidKeyboardState _parseAndroidKeyboardState(String stdout) {
       ? '0x${lastInputType.toLowerCase()}'
       : null;
 
+  final focusedPackage = _parseLastDumpsysValue(
+    stdout,
+    RegExp(r'\bpackageName=([A-Za-z0-9_.]+)\b'),
+  );
+  final focusedResourceId = _parseLastDumpsysValue(
+    stdout,
+    RegExp(r'\b(?:resourceId|resource-id)=([^\s,}]+)'),
+  );
+  final inputMethodPackage = _parseAndroidInputMethodPackage(stdout);
+  final inputOwner = classifyAndroidInputOwner(
+    focusedPackage,
+    resourceId: focusedResourceId,
+    activeInputMethodPackage: inputMethodPackage,
+  );
+
+  if (inputMethodPackage == null &&
+      (isFallbackAndroidInputMethodPackage(focusedPackage) ||
+          isFallbackAndroidInputMethodResource(focusedResourceId))) {
+    emitDiagnostic(
+      EmitDiagnosticOptions(
+        level: DiagnosticLevel.warn,
+        phase: 'android_input_ownership_fallback',
+        data: {
+          'focusedPackage': focusedPackage,
+          'focusedResourceId': focusedResourceId,
+        },
+      ),
+    );
+  }
+
   return AndroidKeyboardState(
     visible: visible,
     inputType: inputType,
     type: inputType != null ? _classifyAndroidKeyboardType(inputType) : null,
+    inputMethodPackage: inputMethodPackage,
+    focusedPackage: focusedPackage,
+    focusedResourceId: focusedResourceId,
+    inputOwner: inputOwner,
   );
+}
+
+String? _parseAndroidInputMethodPackage(String stdout) {
+  final methodId = _parseLastDumpsysValue(
+    stdout,
+    RegExp(r'\b(?:mCurMethodId|mCurId|mCurrentInputMethodId)=([^\s]+)'),
+  );
+  return methodId?.split('/').first;
+}
+
+String? _parseLastDumpsysValue(String stdout, RegExp pattern) {
+  String? value;
+  for (final match in pattern.allMatches(stdout)) {
+    value = match.group(1);
+  }
+  return value;
 }
 
 bool? _parseAndroidKeyboardVisibility(String stdout) {

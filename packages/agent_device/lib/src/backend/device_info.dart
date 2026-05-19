@@ -68,7 +68,7 @@ class BackendDeviceInfo {
   };
 }
 
-/// A target device specification for operations like boot or ensure-simulator.
+/// A target device specification for operations like boot.
 class BackendDeviceTarget {
   final String? id;
   final String? name;

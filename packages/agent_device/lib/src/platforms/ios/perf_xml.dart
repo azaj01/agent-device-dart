@@ -42,7 +42,9 @@ List<XmlElement> findAllXmlElements(
 /// Return the text content of the first child element named [childName]
 /// inside [node], or `null` when absent.
 String? _readFirstChildText(XmlElement node, String childName) {
-  final child = node.childElements.where((c) => c.localName == childName).firstOrNull;
+  final child = node.childElements
+      .where((c) => c.localName == childName)
+      .firstOrNull;
   return child?.innerText;
 }
 

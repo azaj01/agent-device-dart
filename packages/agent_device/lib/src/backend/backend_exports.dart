@@ -35,12 +35,7 @@ export 'diagnostics.dart'
         BackendLogStreamResult,
         BackendReadLogsOptions,
         BackendReadLogsResult;
-export 'install_source.dart'
-    show
-        BackendEnsureSimulatorOptions,
-        BackendEnsureSimulatorResult,
-        BackendInstallResult,
-        BackendInstallTarget;
+export 'install_source.dart' show BackendInstallResult, BackendInstallTarget;
 export 'options.dart'
     show
         BackendAlertAction,

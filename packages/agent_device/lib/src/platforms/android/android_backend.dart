@@ -93,7 +93,7 @@ class AndroidBackend extends Backend {
     String outPath,
     BackendScreenshotOptions? options,
   ) async {
-    await screenshotAndroid(_serial(ctx), outPath);
+    await screenshotAndroid(_serial(ctx), outPath, options?.stabilize);
     return BackendScreenshotResult(path: outPath);
   }
 
@@ -218,19 +218,35 @@ class AndroidBackend extends Backend {
         final rect = node!.rect!;
         final targetX = rect.x + (rect.width * options.normalizedPosition!);
         final targetY = rect.y + (rect.height / 2);
-        await runCmd('adb', adbArgs(serial, [
-          'shell', 'input', 'swipe',
-          '$x', '$y',
-          '${targetX.round()}', '${targetY.round()}',
-          '300',
-        ]));
+        await runCmd(
+          'adb',
+          adbArgs(serial, [
+            'shell',
+            'input',
+            'swipe',
+            '$x',
+            '$y',
+            '${targetX.round()}',
+            '${targetY.round()}',
+            '300',
+          ]),
+        );
       } else {
         // No rect — estimate based on screen width.
         final targetX = (options.normalizedPosition! * 1080).round();
-        await runCmd('adb', adbArgs(serial, [
-          'shell', 'input', 'swipe',
-          '$x', '$y', '$targetX', '$y', '300',
-        ]));
+        await runCmd(
+          'adb',
+          adbArgs(serial, [
+            'shell',
+            'input',
+            'swipe',
+            '$x',
+            '$y',
+            '$targetX',
+            '$y',
+            '300',
+          ]),
+        );
       }
       return null;
     }
@@ -238,12 +254,19 @@ class AndroidBackend extends Backend {
     // Increment/decrement: short swipe left or right from the target.
     final swipeDistance = options.action == 'decrement' ? -50 : 50;
     for (var i = 0; i < options.steps; i++) {
-      await runCmd('adb', adbArgs(serial, [
-        'shell', 'input', 'swipe',
-        '$x', '$y',
-        '${x + swipeDistance}', '$y',
-        '200',
-      ]));
+      await runCmd(
+        'adb',
+        adbArgs(serial, [
+          'shell',
+          'input',
+          'swipe',
+          '$x',
+          '$y',
+          '${x + swipeDistance}',
+          '$y',
+          '200',
+        ]),
+      );
     }
     return null;
   }
@@ -674,12 +697,16 @@ class AndroidBackend extends Backend {
             'description': androidFrameSampleDescription,
             'droppedFrameCount': fps.droppedFrameCount,
             'totalFrameCount': fps.totalFrameCount,
-            if (fps.sampleWindowMs != null) 'sampleWindowMs': fps.sampleWindowMs,
-            if (fps.frameDeadlineMs != null) 'frameDeadlineMs': fps.frameDeadlineMs,
+            if (fps.sampleWindowMs != null)
+              'sampleWindowMs': fps.sampleWindowMs,
+            if (fps.frameDeadlineMs != null)
+              'frameDeadlineMs': fps.frameDeadlineMs,
             if (fps.refreshRateHz != null) 'refreshRateHz': fps.refreshRateHz,
-            if (fps.windowStartedAt != null) 'windowStartedAt': fps.windowStartedAt,
+            if (fps.windowStartedAt != null)
+              'windowStartedAt': fps.windowStartedAt,
             if (fps.windowEndedAt != null) 'windowEndedAt': fps.windowEndedAt,
-            if (fps.timestampSource != null) 'timestampSource': fps.timestampSource,
+            if (fps.timestampSource != null)
+              'timestampSource': fps.timestampSource,
             'source': fps.source,
             'measuredAt': fps.measuredAt,
             if (fps.worstWindows != null)

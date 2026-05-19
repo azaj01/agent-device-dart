@@ -4,10 +4,13 @@ import 'dart:async';
 
 import '../../core/device_rotation.dart';
 import '../../core/scroll_gesture.dart';
+import '../../utils/diagnostics.dart';
 import '../../utils/errors.dart';
 import '../../utils/exec.dart';
 import '../../utils/timeouts.dart';
 import 'adb.dart';
+import 'device_input_state.dart';
+import 'input_ownership.dart';
 import 'snapshot.dart';
 import 'ui_hierarchy.dart';
 
@@ -109,11 +112,13 @@ Future<void> longPressAndroid(
 
 /// Type text with optional per-character delay.
 Future<void> typeAndroid(String serial, String text, [int delayMs = 0]) async {
+  _assertAndroidShellTextSupported(text);
+  await _assertAndroidShellInputIsAppOwned(serial, 'type');
   if (delayMs > 0 && text.runes.length > 1) {
-    await _typeAndroidChunked(serial, text, 1, delayMs);
+    await _typeAndroidShell(serial, 'type', text, 1, delayMs);
     return;
   }
-  await _typeAndroidImmediate(serial, text);
+  await _typeAndroidShell(serial, 'type', text, _androidInputTextChunkSize, 0);
 }
 
 /// Focus on the specified coordinates (equivalent to press).
@@ -129,49 +134,53 @@ Future<void> fillAndroid(
   String text, [
   int delayMs = 0,
 ]) async {
+  _assertAndroidShellTextSupported(text);
+
   final textCodePointLength = text.runes.length;
-  final requiresClipboardInjection = _shouldUseClipboardTextInjection(text);
   final attempts =
-      <({String strategy, int clearPadding, int minClear, int maxClear})>[
-        (strategy: 'input_text', clearPadding: 12, minClear: 8, maxClear: 48),
+      <
+        ({
+          int clearPadding,
+          int minClear,
+          int maxClear,
+          int chunkSize,
+          int inputDelayMs,
+        })
+      >[
+        (
+          clearPadding: 12,
+          minClear: 8,
+          maxClear: 48,
+          chunkSize: delayMs > 0 ? 1 : _androidInputTextChunkSize,
+          inputDelayMs: delayMs,
+        ),
+        (
+          clearPadding: 24,
+          minClear: 16,
+          maxClear: 96,
+          chunkSize: delayMs > 0 ? 1 : 4,
+          inputDelayMs: delayMs > 0 ? delayMs : 15,
+        ),
       ];
-  if (!requiresClipboardInjection && delayMs <= 0) {
-    attempts.add((
-      strategy: 'clipboard_paste',
-      clearPadding: 12,
-      minClear: 8,
-      maxClear: 48,
-    ));
-  }
-  if (!requiresClipboardInjection || delayMs > 0) {
-    attempts.add((
-      strategy: 'chunked_input',
-      clearPadding: 24,
-      minClear: 16,
-      maxClear: 96,
-    ));
-  }
 
   String? lastActual;
 
   for (final attempt in attempts) {
     await focusAndroid(serial, x, y);
+    await _assertAndroidShellInputIsAppOwned(serial, 'fill');
     final clearCount = _clampCount(
       textCodePointLength + attempt.clearPadding,
       attempt.minClear,
       attempt.maxClear,
     );
     await _clearFocusedText(serial, clearCount);
-    if (attempt.strategy == 'input_text') {
-      await typeAndroid(serial, text, delayMs);
-    } else if (attempt.strategy == 'clipboard_paste') {
-      final clipboardResult = await _typeAndroidViaClipboard(serial, text);
-      if (clipboardResult != 'ok') {
-        continue;
-      }
-    } else {
-      await _typeAndroidChunked(serial, text, 1, delayMs > 0 ? delayMs : 15);
-    }
+    await _typeAndroidShell(
+      serial,
+      'fill',
+      text,
+      attempt.chunkSize,
+      attempt.inputDelayMs,
+    );
     final verification = await _verifyAndroidFilledText(serial, x, y, text);
     lastActual = verification.actual;
     if (verification.ok) return;
@@ -291,6 +300,8 @@ Future<String?> readAndroidTextAtPoint(String serial, int x, int y) async {
 
 // ===== Private helpers =====
 
+const int _androidInputTextChunkSize = 8;
+
 String _resolveAndroidUserRotation(DeviceRotation orientation) {
   return switch (orientation) {
     DeviceRotation.portrait => '0',
@@ -300,50 +311,110 @@ String _resolveAndroidUserRotation(DeviceRotation orientation) {
   };
 }
 
-Future<void> _typeAndroidImmediate(String serial, String text) async {
-  final shouldInjectViaClipboard = _shouldUseClipboardTextInjection(text);
-  if (shouldInjectViaClipboard) {
-    final clipboardResult = await _typeAndroidViaClipboard(serial, text);
-    if (clipboardResult == 'ok') return;
-  }
+Future<void> _assertAndroidShellInputIsAppOwned(
+  String serial,
+  String action,
+) async {
+  AndroidKeyboardState state;
   try {
-    final encoded = _encodeAndroidInputText(text);
-    await runCmd('adb', adbArgs(serial, ['shell', 'input', 'text', encoded]));
+    state = await getAndroidKeyboardState(serial);
   } catch (error) {
-    if (shouldInjectViaClipboard && _isAndroidInputTextUnsupported(error)) {
-      throw AppError(
-        AppErrorCodes.commandFailed,
-        'Non-ASCII text input is not supported on this Android shell. Install an ADB keyboard IME or use ASCII input.',
-        details: {'textPreview': text.substring(0, (text.length).clamp(0, 32))},
-        cause: error is Exception ? error : null,
+    emitDiagnostic(
+      EmitDiagnosticOptions(
+        level: DiagnosticLevel.warn,
+        phase: 'android_input_ownership_probe_failed',
+        data: {
+          'action': action,
+          'error': error is Exception
+              ? error.toString()
+              : String.fromCharCode(error as int),
+        },
+      ),
+    );
+    return;
+  }
+  if (state.inputOwner != AndroidInputOwner.ime) return;
+  throw AppError(
+    AppErrorCodes.commandFailed,
+    'KEYBOARD_OVERLAY_BLOCKING: Android text input is blocked because the focused input belongs to the active keyboard/IME.',
+    details: {
+      'failureReason': 'ime_capture',
+      'action': action,
+      'inputOwner': state.inputOwner.value,
+      'inputType': state.inputType,
+      'type': state.type?.value,
+      'inputMethodPackage': state.inputMethodPackage,
+      'focusedPackage': state.focusedPackage,
+      'focusedResourceId': state.focusedResourceId,
+      'nextAction':
+          'Focused input appears to be owned by the keyboard/IME; dismiss or change the IME before retrying text entry.',
+    },
+  );
+}
+
+Future<void> _typeAndroidShell(
+  String serial,
+  String action,
+  String text,
+  int chunkSize,
+  int delayMs,
+) async {
+  final parts = text.split('\n');
+  for (int partIndex = 0; partIndex < parts.length; partIndex++) {
+    final part = parts[partIndex];
+    final chunks = _chunkAndroidInputText(part, chunkSize);
+    for (int chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+      final chunk = chunks[chunkIndex];
+      await _typeAndroidShellChunk(serial, chunk);
+      if (delayMs > 0 &&
+          (chunkIndex + 1 < chunks.length || partIndex + 1 < parts.length)) {
+        await sleep(Duration(milliseconds: delayMs));
+      }
+    }
+    if (partIndex + 1 < parts.length) {
+      await runCmd(
+        'adb',
+        adbArgs(serial, ['shell', 'input', 'keyevent', 'ENTER']),
       );
+    }
+  }
+  _emitAndroidTextDiagnostic(action, 'adb-shell', text);
+}
+
+Future<void> _typeAndroidShellChunk(String serial, String text) async {
+  if (text.isEmpty) return;
+  try {
+    await runCmd(
+      'adb',
+      adbArgs(serial, [
+        'shell',
+        'input',
+        'text',
+        _encodeAndroidInputText(text),
+      ]),
+    );
+  } catch (error) {
+    if (_isAndroidInputTextUnsupported(error)) {
+      throw _unsupportedAndroidShellTextError(text, error);
     }
     rethrow;
   }
 }
 
-Future<void> _typeAndroidChunked(
-  String serial,
-  String text,
-  int chunkSize,
-  int delayMs,
-) async {
-  final size = (chunkSize).clamp(1, double.infinity).toInt();
-  final chars = text.split('');
-  for (int i = 0; i < chars.length; i += size) {
-    final chunk = chars.sublist(i, (i + size).clamp(0, chars.length)).join();
-    await _typeAndroidImmediate(serial, chunk);
-    if (delayMs > 0 && i + size < chars.length) {
-      await sleep(Duration(milliseconds: delayMs));
-    }
-  }
+void _assertAndroidShellTextSupported(String text) {
+  if (_isAndroidShellTextSupported(text)) return;
+  throw _unsupportedAndroidShellTextError(text);
 }
 
-bool _shouldUseClipboardTextInjection(String text) {
-  for (final codePoint in text.runes) {
-    if (codePoint < 0x20 || codePoint > 0x7e) return true;
+bool _isAndroidShellTextSupported(String text) {
+  for (final char in text.runes) {
+    final code = char;
+    if (code == 0x0A) continue; // newline
+    if (code < 0x20 || code > 0x7e) {
+      return false;
+    }
   }
-  return false;
+  return true;
 }
 
 String _encodeAndroidInputText(String text) {
@@ -358,6 +429,7 @@ Future<({String? actual, bool ok})> _verifyAndroidFilledText(
 ) async {
   const verificationDelaysMs = [0, 150, 350];
   String? lastActual;
+  ({String? actual, bool ok})? stableVerification;
 
   for (final delayMs in verificationDelaysMs) {
     if (delayMs > 0) {
@@ -365,11 +437,13 @@ Future<({String? actual, bool ok})> _verifyAndroidFilledText(
     }
     lastActual = await readAndroidTextAtPoint(serial, x, y);
     if (_isAcceptableAndroidFillMatch(lastActual, expected)) {
-      return (actual: lastActual, ok: true);
+      stableVerification = (actual: lastActual, ok: true);
+    } else {
+      stableVerification = null;
     }
   }
 
-  return (actual: lastActual, ok: false);
+  return stableVerification ?? (actual: lastActual, ok: false);
 }
 
 bool _isAcceptableAndroidFillMatch(String? actual, String expected) {
@@ -384,42 +458,12 @@ bool _isAcceptableAndroidFillMatch(String? actual, String expected) {
   if (normalizedActual == normalizedExpected) {
     return true;
   }
-  if (normalizedActual.contains(normalizedExpected)) {
-    return true;
-  }
-  return normalizedExpected.contains(normalizedActual) &&
-      normalizedActual.length >=
-          (4).clamp(4, (normalizedExpected.length * 0.8).floor());
+  // Stricter matching: only exact after normalization
+  return false;
 }
 
 String _normalizeFillVerificationText(String? value) {
   return (value ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
-}
-
-Future<String> _typeAndroidViaClipboard(String serial, String text) async {
-  final setClipboard = await runCmd(
-    'adb',
-    adbArgs(serial, ['shell', 'cmd', 'clipboard', 'set', 'text', text]),
-    const ExecOptions(allowFailure: true),
-  );
-  if (setClipboard.exitCode != 0) return 'failed';
-  if (isClipboardShellUnsupported(setClipboard.stdout, setClipboard.stderr)) {
-    return 'unsupported';
-  }
-
-  final pasteByName = await runCmd(
-    'adb',
-    adbArgs(serial, ['shell', 'input', 'keyevent', 'KEYCODE_PASTE']),
-    const ExecOptions(allowFailure: true),
-  );
-  if (pasteByName.exitCode == 0) return 'ok';
-
-  final pasteByCode = await runCmd(
-    'adb',
-    adbArgs(serial, ['shell', 'input', 'keyevent', '279']),
-    const ExecOptions(allowFailure: true),
-  );
-  return pasteByCode.exitCode == 0 ? 'ok' : 'failed';
 }
 
 bool _isAndroidInputTextUnsupported(Object error) {
@@ -433,6 +477,42 @@ bool _isAndroidInputTextUnsupported(Object error) {
     return true;
   }
   return false;
+}
+
+AppError _unsupportedAndroidShellTextError(String text, [Object? cause]) {
+  return AppError(
+    AppErrorCodes.commandFailed,
+    'Android text input requires provider-native text injection for non-ASCII/control characters; the current adb-shell fallback supports ASCII text only.',
+    details: {
+      'backend': 'adb-shell',
+      'textLength': text.runes.length,
+      'textPreview': text.substring(0, text.length.clamp(0, 32)),
+    },
+    cause: cause is Exception ? cause : null,
+  );
+}
+
+List<String> _chunkAndroidInputText(String text, int chunkSize) {
+  final size = chunkSize.clamp(1, double.infinity).toInt();
+  final chunks = <String>[];
+  final chars = text.runes.map((r) => String.fromCharCode(r)).toList();
+  for (int i = 0; i < chars.length; i += size) {
+    chunks.add(chars.sublist(i, (i + size).clamp(0, chars.length)).join());
+  }
+  return chunks.isNotEmpty ? chunks : [''];
+}
+
+void _emitAndroidTextDiagnostic(String action, String backend, String text) {
+  emitDiagnostic(
+    EmitDiagnosticOptions(
+      phase: 'android_text_injection',
+      data: {
+        'action': action,
+        'backend': backend,
+        'textLength': text.runes.length,
+      },
+    ),
+  );
 }
 
 Future<void> _clearFocusedText(String serial, int count) async {
