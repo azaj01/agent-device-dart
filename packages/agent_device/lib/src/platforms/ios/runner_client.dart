@@ -258,6 +258,19 @@ class IosRunnerClient {
     }
     final buildSubdir = kind == IosRunnerKind.device ? 'build-device' : 'build';
     final derivedDataPath = p.join(projectRoot, buildSubdir);
+    final existingProductsDir =
+        p.join(derivedDataPath, 'Build', 'Products');
+    // Check if build products already exist at the project root (e.g. from
+    // a previous `dart run` session). Avoids unnecessary rebuilds when the
+    // compiled binary runs from a different CWD.
+    try {
+      return (
+        template: findXctestrun(existingProductsDir, kind: kind),
+        productsDir: existingProductsDir,
+      );
+    } on AppError {
+      // Not found — proceed to auto-build.
+    }
     final progress = logger.progress('[runner] auto-building iOS runner');
     final result = await runCmd('xcodebuild', [
       'build-for-testing',
