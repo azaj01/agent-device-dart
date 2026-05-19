@@ -384,7 +384,7 @@ class IosRunnerClient {
     // to a generous budget when the caller doesn't override.
     startupTimeout ??= kind == IosRunnerKind.device
         ? const Duration(seconds: 180)
-        : const Duration(seconds: 60);
+        : const Duration(seconds: 120);
     final initialProductsDir = resolveBuildProductsDir(
       override: buildProductsDirOverride,
       kind: kind,
