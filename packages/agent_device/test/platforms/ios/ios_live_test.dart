@@ -144,7 +144,8 @@ void main() {
       print('[live] screenshot: ${bytes.length} bytes');
     });
 
-    test('apps lists installed bundles (user + system)', () async {
+    test('apps lists installed bundles', () async {
+      // Default: user-installed only.
       final r = await cli([
         'apps',
         '--platform',
@@ -158,9 +159,25 @@ void main() {
       expect(env['success'], isTrue);
       final list = env['data'] as List;
       expect(list, isNotEmpty);
-      final ids = list.map((a) => (a as Map)['bundleId'] as String).toList();
+      print('[live] user apps count: ${list.length}');
+
+      // --all includes system apps like Safari.
+      final rAll = await cli([
+        'apps',
+        '--all',
+        '--platform',
+        'ios',
+        '--serial',
+        bootedUdid,
+        '--json',
+      ], stateDir: stateDir.path);
+      expect(rAll.exitCode, 0, reason: rAll.stderr);
+      final envAll = jsonDecode(rAll.stdout.trim().split('\n').first) as Map;
+      final listAll = envAll['data'] as List;
+      final ids = listAll.map((a) => (a as Map)['bundleId'] as String).toList();
       expect(ids, contains('com.apple.mobilesafari'));
-      print('[live] apps count: ${list.length}');
+      expect(listAll.length, greaterThan(list.length));
+      print('[live] all apps count: ${listAll.length}');
     });
 
     test('open + close Safari round-trip', () async {
