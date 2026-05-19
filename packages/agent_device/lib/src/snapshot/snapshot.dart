@@ -74,6 +74,7 @@ class RawSnapshotNode {
   final String? surface;
   bool? hiddenContentAbove;
   bool? hiddenContentBelow;
+  List<String>? presentationHints;
 
   RawSnapshotNode({
     required this.index,
@@ -96,6 +97,7 @@ class RawSnapshotNode {
     this.surface,
     this.hiddenContentAbove,
     this.hiddenContentBelow,
+    this.presentationHints,
   });
 
   /// Convert to a JSON map.
@@ -120,6 +122,7 @@ class RawSnapshotNode {
     if (surface != null) 'surface': surface,
     if (hiddenContentAbove != null) 'hiddenContentAbove': hiddenContentAbove,
     if (hiddenContentBelow != null) 'hiddenContentBelow': hiddenContentBelow,
+    if (presentationHints != null) 'presentationHints': presentationHints,
   };
 }
 
@@ -160,6 +163,7 @@ class SnapshotNode extends RawSnapshotNode {
     super.surface,
     super.hiddenContentAbove,
     super.hiddenContentBelow,
+    super.presentationHints,
   });
 
   @override
@@ -283,6 +287,7 @@ List<SnapshotNode> attachRefs(List<RawSnapshotNode> nodes) {
       surface: node.surface,
       hiddenContentAbove: node.hiddenContentAbove,
       hiddenContentBelow: node.hiddenContentBelow,
+      presentationHints: node.presentationHints,
     );
   }).toList();
 }
