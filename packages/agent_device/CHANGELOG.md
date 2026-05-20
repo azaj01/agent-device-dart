@@ -1,3 +1,50 @@
+## 0.0.7
+
+**Bug Fixes**
+
+- reuse existing runner build products before auto-building
+- add missing focused/selected params to Swift SnapshotNode calls
+- increase default startup timeout for iOS runner client
+- increase timeout for scenario detail flow test to 150 seconds
+
+**Ported from agent-device:**
+
+Bug Fix
+
+- iOS runner build path (`runner_client.dart`): Fixed `_ensureXctestrun` to return the correct `productsDir` after auto-build. Previously it built to `projectRoot/build/Build/Products` but then looked for the xctestrun in the original CWD-relative path. Now it returns both the template and the resolved products dir as a record.
+
+Upstream Ports (5 areas, 12 commits)
+
+Swift Runner (4 commits merged)
+
+- Quiescence skip for RN/Flutter apps (`performWithQuiescenceSkippedIfSupported`)
+- XCTest attachment bloat prevention (`.xctestplan` with `keepNever`)
+- Replay performance: direct selector tap, fast foreground guard, keyboard-avoiding drag, extracted `executeTypeCommand`
+- New `RunnerTests+TvRemote.swift` split-out
+- All slider additions preserved
+
+Touch Target Resolution Policy (new `interaction_targeting.dart`)
+
+- SEMANTIC_TOUCH_ROLE_FRAGMENTS list prevents tab buttons from resolving to overly broad parent containers
+- Integrated into `AgentDevice.resolveTarget()` with 10 unit tests
+
+Android Snapshot Presentation (new `android_helper_snapshot_presentation.dart`)
+
+- Collapses zero-area nodes, duplicate rows, bottom-nav noise
+- 547 lines ported with 8 unit tests
+
+Small Features
+
+- screenshot --no-stabilize flag for faster capture loops
+- apps command defaults to user-installed, --all for system apps
+- Removed ensure-simulator command (upstream dropped it)
+
+Android Stability
+
+- Input ownership tracking (new `input_ownership.dart`) with IME detection
+- Fill verification with settled state + stricter matching
+- Busy RN snapshot detection with enriched timeout errors
+
 ## 0.0.6
 
 **Features**
