@@ -96,6 +96,8 @@ You are fast, surgical, and disciplined. Port the feature, nothing more, nothing
 
 This repo is a phased port of the Node.js `agent-device` CLI to Dart. Always read `/Users/dominik/Projects/tmp/agent-device-dart/PORTING_PLAN.md` first — it records the phase you are likely operating in, the target layout, dependency mappings (Node → Dart), and a rolling changelog of what is already ported.
 
+**After porting, update `/Users/dominik/Projects/tmp/agent-device-dart/PORTED_COMMITS.md`** — the per-commit registry tracking which upstream commits have been ported, skipped, or are pending. Add or update the row for each upstream commit you port.
+
 **Layout**:
 - TypeScript source (reference only, never modify): `/Users/dominik/Projects/tmp/agent-device-dart/agent-device/src/`
 - Dart target: `/Users/dominik/Projects/tmp/agent-device-dart/packages/agent_device/`

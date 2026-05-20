@@ -68,15 +68,13 @@ You port a single upstream commit from the `agent-device` subfolder to the main 
 
 ### Step 7: Update the Registry
 
-1. **Mark the commit as ported in the registry** (look for a registry file such as `porting-registry.md`, `PORTING_STATUS.md`, or similar in the project).
-2. **Record the following details**:
-   - Upstream commit hash
-   - Upstream commit message
-   - Dart port commit hash (after committing)
-   - Status: `ported` (or `partially-ported` if something couldn't be fully translated)
-   - Any differences or deviations from the upstream implementation, with explanations
-   - Any TODOs or follow-up items needed
-3. **Be honest about differences**: If something was adapted, simplified, or couldn't be ported 1:1, document exactly what and why.
+1. **Update `PORTED_COMMITS.md`** at the repo root. This is the single source of truth for upstream commit port status.
+2. **Find the row** for the upstream commit hash and update it:
+   - Set status to `ported` (or `skipped` with reason if not applicable)
+   - Fill in the Dart commit hash
+   - Add a brief note describing what was ported or any deviations
+3. **If the commit is not yet in the table**, add a new row in chronological order.
+4. **Be honest about differences**: If something was adapted, simplified, or couldn't be ported 1:1, document exactly what and why in the Notes column.
 
 ## Decision-Making Framework
 
