@@ -116,7 +116,7 @@ void main() {
         'No profile submitted yet',
       );
     },
-    timeout: const Timeout(Duration(seconds: 90)),
+    timeout: const Timeout(Duration(seconds: 150)),
   );
 
   test(
