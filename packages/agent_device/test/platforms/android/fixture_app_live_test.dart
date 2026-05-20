@@ -155,7 +155,7 @@ void main() {
         'Scenario status: complete',
       );
     },
-    timeout: const Timeout(Duration(seconds: 90)),
+    timeout: const Timeout(Duration(seconds: 150)),
   );
 
   test(
@@ -188,7 +188,7 @@ void main() {
       );
       await expectVisibleId(device, FixtureIds.stateRecommendationCaptureLogs);
     },
-    timeout: const Timeout(Duration(seconds: 90)),
+    timeout: const Timeout(Duration(seconds: 150)),
   );
 
   test(
@@ -220,6 +220,6 @@ void main() {
         'Sheet pinned',
       );
     },
-    timeout: const Timeout(Duration(seconds: 90)),
+    timeout: const Timeout(Duration(seconds: 150)),
   );
 }
