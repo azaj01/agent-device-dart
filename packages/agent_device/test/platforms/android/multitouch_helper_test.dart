@@ -126,7 +126,7 @@ INSTRUMENTATION_CODE: -1
       expect(out['kind'], equals('rotate'));
     });
 
-    test('throws COMMAND_FAILED when protocol marker is missing', () {
+    test('throws ANDROID_MULTITOUCH_HELPER_NO_FINAL_RESULT when protocol marker is missing', () {
       const raw = '''
 INSTRUMENTATION_RESULT: something=else
 INSTRUMENTATION_CODE: -1
@@ -137,27 +137,38 @@ INSTRUMENTATION_CODE: -1
           isA<AppError>().having(
             (e) => e.code,
             'code',
-            equals(AppErrorCodes.commandFailed),
+            equals('ANDROID_MULTITOUCH_HELPER_NO_FINAL_RESULT'),
+          ).having(
+            (e) => e.message,
+            'message',
+            equals('Android multi-touch helper did not return a final result'),
           ),
         ),
       );
     });
 
-    test('throws COMMAND_FAILED when ok=false with message', () {
+    test('throws ANDROID_MULTITOUCH_HELPER_REPORTED_FAILURE when ok=false with message', () {
       const raw = '''
 INSTRUMENTATION_RESULT: agentDeviceProtocol=android-multitouch-helper-v1
 INSTRUMENTATION_RESULT: ok=false
-INSTRUMENTATION_RESULT: message=Injection failed: timeout
+INSTRUMENTATION_RESULT: errorType=java.lang.IllegalStateException
+INSTRUMENTATION_RESULT: message=injectInputEvent returned false
 INSTRUMENTATION_CODE: -1
 ''';
       expect(
         () => parseAndroidMultitouchHelperOutputForTest(raw),
         throwsA(
-          isA<AppError>().having(
-            (e) => e.message,
-            'message',
-            contains('Injection failed'),
-          ),
+          isA<AppError>()
+              .having(
+                (e) => e.code,
+                'code',
+                equals('ANDROID_MULTITOUCH_HELPER_REPORTED_FAILURE'),
+              )
+              .having(
+                (e) => e.message,
+                'message',
+                contains('injectInputEvent returned false'),
+              ),
         ),
       );
     });

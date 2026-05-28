@@ -33,12 +33,14 @@ const _kMultitouchHelperRunner =
     'com.callstack.agentdevice.multitouchhelper/.MultiTouchInstrumentation';
 const _kMultitouchHelperProtocol = 'android-multitouch-helper-v1';
 const _kInstallTimeoutMs = 30000;
-const _kGestureTimeoutMs = 15000;
+const _kGestureTimeoutMs = 45000;
 const _kDefaultDurationMs = 300;
 const _kDefaultRadius = 160;
 const _kRotateMaxDegreesPerFrame = 3;
 const _kRotateFrameIntervalMs = 16;
 const _kRotateMaxDurationMs = 2400;
+const _kNoFinalResult = 'ANDROID_MULTITOUCH_HELPER_NO_FINAL_RESULT';
+const _kReportedFailure = 'ANDROID_MULTITOUCH_HELPER_REPORTED_FAILURE';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -506,6 +508,18 @@ Future<Map<String, Object?>> _runGesture({
   try {
     output = _parseOutput('${result.stdout}\n${result.stderr}');
   } catch (error) {
+    if (error is AppError) {
+      if (error.code == _kReportedFailure) {
+        throw AppError(
+          AppErrorCodes.commandFailed,
+          error.message,
+          details: error.details,
+        );
+      }
+      if (error.code != _kNoFinalResult) {
+        rethrow;
+      }
+    }
     throw AppError(
       AppErrorCodes.commandFailed,
       result.exitCode == 0
@@ -547,7 +561,7 @@ Map<String, Object?> _parseOutput(String raw) {
   );
   if (finalResult.isEmpty) {
     throw AppError(
-      AppErrorCodes.commandFailed,
+      _kNoFinalResult,
       'Android multi-touch helper did not return a final result',
     );
   }
@@ -559,7 +573,7 @@ Map<String, Object?> _parseOutput(String raw) {
         (message != null && message != 'null')
             ? message
             : errorType ?? 'Android multi-touch helper returned an error';
-    throw AppError(AppErrorCodes.commandFailed, msg, details: {
+    throw AppError(_kReportedFailure, msg, details: {
       'errorType': errorType,
       'helper': finalResult,
     });
