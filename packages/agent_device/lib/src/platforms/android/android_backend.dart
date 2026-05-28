@@ -14,6 +14,7 @@ import 'package:agent_device/src/utils/exec.dart';
 import 'package:path/path.dart' as p;
 
 import 'adb.dart';
+import 'alert.dart';
 import 'app_lifecycle.dart';
 import 'device_input_state.dart';
 import 'devices.dart';
@@ -383,6 +384,39 @@ class AndroidBackend extends Backend {
   ) async {
     await writeAndroidClipboardText(_serial(ctx), text);
     return null;
+  }
+
+  // =========================================================================
+  // Alerts
+  // =========================================================================
+
+  @override
+  Future<BackendAlertResult> handleAlert(
+    BackendCommandContext ctx,
+    BackendAlertAction action, [
+    Map<String, Object?>? options,
+  ]) async {
+    final serial = _serial(ctx);
+    final timeoutMs = options?['timeoutMs'] as int?;
+    final result = await handleAndroidAlert(
+      serial,
+      action,
+      timeoutMs: timeoutMs,
+    );
+    return switch (result) {
+      AndroidAlertStatusResult r => BackendAlertStatusResult(
+        alert: r.alert?.toBackendAlertInfo(),
+      ),
+      AndroidAlertWaitResult r => BackendAlertWaitResult(
+        alert: r.alert.toBackendAlertInfo(),
+        waitedMs: r.waitedMs,
+      ),
+      AndroidAlertHandledResult r => BackendAlertHandledResult(
+        handled: true,
+        alert: r.alert.toBackendAlertInfo(),
+        button: r.button,
+      ),
+    };
   }
 
   // =========================================================================

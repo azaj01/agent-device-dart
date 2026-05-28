@@ -14,12 +14,85 @@ class AndroidSnapshotAnalysis {
   });
 }
 
+/// Flat metadata for one UIAutomator XML `<node>` element.
+///
+/// Used by [androidUiNodes] to iterate nodes without building the full tree,
+/// e.g. for fill verification.
+class AndroidUiNodeMetadata {
+  final String? text;
+  final String? desc;
+  final String? resourceId;
+  final String? packageName;
+  final String? className;
+  final String? bounds;
+  final Rect? rect;
+  final bool? clickable;
+  final bool? enabled;
+  final bool? focusable;
+  final bool? focused;
+  final bool? password;
+
+  const AndroidUiNodeMetadata({
+    required this.text,
+    required this.desc,
+    required this.resourceId,
+    required this.packageName,
+    required this.className,
+    required this.bounds,
+    this.rect,
+    this.clickable,
+    this.enabled,
+    this.focusable,
+    this.focused,
+    this.password,
+  });
+}
+
+/// Iterate over all `<node>` elements in [xml], yielding metadata for each.
+///
+/// Provides a flat iteration of UIAutomator XML nodes without building the
+/// full hierarchy tree — suitable for fill verification and point-lookup uses.
+Iterable<AndroidUiNodeMetadata> androidUiNodes(String xml) sync* {
+  final nodeRegex = RegExp(r'<node\b[^>]*>');
+  for (final match in nodeRegex.allMatches(xml)) {
+    yield _readAndroidUiNodeMetadata(match[0]!);
+  }
+}
+
+AndroidUiNodeMetadata _readAndroidUiNodeMetadata(String node) {
+  final attrs = _parseXmlNodeAttributes(node);
+  String? getAttr(String name) => attrs[name];
+  bool? boolAttr(String name) {
+    final raw = getAttr(name);
+    if (raw == null) return null;
+    return raw == 'true';
+  }
+
+  final bounds = getAttr('bounds');
+  final rect = _parseBounds(bounds);
+  return AndroidUiNodeMetadata(
+    text: getAttr('text'),
+    desc: getAttr('content-desc'),
+    resourceId: getAttr('resource-id'),
+    packageName: getAttr('package'),
+    className: getAttr('class'),
+    bounds: bounds,
+    rect: rect,
+    clickable: boolAttr('clickable'),
+    enabled: boolAttr('enabled'),
+    focusable: boolAttr('focusable'),
+    focused: boolAttr('focused'),
+    password: boolAttr('password'),
+  );
+}
+
 /// Android-specific node attributes extracted from UIAutomator XML.
 class AndroidUiHierarchy {
   final String? type;
   final String? label;
   final String? value;
   final String? identifier;
+  final String? packageName;
   final Rect? rect;
   final bool? enabled;
   final bool? hittable;
@@ -34,6 +107,7 @@ class AndroidUiHierarchy {
     required this.label,
     required this.value,
     required this.identifier,
+    required this.packageName,
     required this.rect,
     required this.enabled,
     required this.hittable,
@@ -60,20 +134,17 @@ class AndroidBuiltSnapshot {
   });
 }
 
-/// Extract attributes for a text query from UIAutomator XML.
+/// Find the center coordinates of the first node whose text or description
+/// contains [query] (case-insensitive).
 ///
-/// Returns the center coordinates of the first node matching the query,
-/// or null if no match found.
+/// Returns null if no matching node is found.
 ({int x, int y})? findBounds(String xml, String query) {
   final q = query.toLowerCase();
-  final nodeRegex = RegExp(r'<node[^>]+>');
-  for (final match in nodeRegex.allMatches(xml)) {
-    final node = match[0]!;
-    final attrs = _parseXmlNodeAttributes(node);
-    final textVal = (attrs['text'] ?? '').toLowerCase();
-    final descVal = (attrs['content-desc'] ?? '').toLowerCase();
+  for (final node in androidUiNodes(xml)) {
+    final textVal = (node.text ?? '').toLowerCase();
+    final descVal = (node.desc ?? '').toLowerCase();
     if (textVal.contains(q) || descVal.contains(q)) {
-      final rect = parseBounds(attrs['bounds']);
+      final rect = node.rect;
       if (rect != null) {
         return (
           x: (rect.x + rect.width / 2).floor(),
@@ -178,6 +249,7 @@ AndroidBuiltSnapshot buildUiHierarchySnapshot(
           label: node.label,
           value: node.value,
           identifier: node.identifier,
+          bundleId: node.packageName,
           rect: node.rect,
           enabled: node.enabled,
           hittable: node.hittable,
@@ -220,45 +292,17 @@ AndroidBuiltSnapshot buildUiHierarchySnapshot(
 
 /// Extract node attributes from an XML node string.
 ///
-/// Parses the opening tag and extracts common UIAutomator attributes,
-/// converting string boolean values to Dart bools where applicable.
-({
-  String? text,
-  String? desc,
-  String? resourceId,
-  String? className,
-  String? bounds,
-  bool? clickable,
-  bool? enabled,
-  bool? focusable,
-  bool? focused,
-})
-readNodeAttributes(String node) {
-  final attrs = _parseXmlNodeAttributes(node);
-  String? getAttr(String name) => attrs[name];
-  bool? boolAttr(String name) {
-    final raw = getAttr(name);
-    if (raw == null) return null;
-    return raw == 'true';
-  }
+/// Returns the same [AndroidUiNodeMetadata] record used internally.
+/// Public alias so test code can call this directly.
+AndroidUiNodeMetadata readNodeAttributes(String node) =>
+    _readAndroidUiNodeMetadata(node);
 
-  return (
-    text: getAttr('text'),
-    desc: getAttr('content-desc'),
-    resourceId: getAttr('resource-id'),
-    className: getAttr('class'),
-    bounds: getAttr('bounds'),
-    clickable: boolAttr('clickable'),
-    enabled: boolAttr('enabled'),
-    focusable: boolAttr('focusable'),
-    focused: boolAttr('focused'),
-  );
-}
-
-/// Parse bounds string "[x1,y1][x2,y2]" into a Rect.
+/// Parse bounds string "[x1,y1][x2,y2]" into a [Rect].
 ///
 /// Returns null if bounds string is invalid or empty.
-Rect? parseBounds(String? bounds) {
+Rect? parseBounds(String? bounds) => _parseBounds(bounds);
+
+Rect? _parseBounds(String? bounds) {
   if (bounds == null || bounds.isEmpty) return null;
   final match = RegExp(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]').firstMatch(bounds);
   if (match == null) return null;
@@ -289,6 +333,7 @@ AndroidUiHierarchy parseUiHierarchyTree(String xml) {
     label: null,
     value: null,
     identifier: null,
+    packageName: null,
     depth: -1,
     parentIndex: null,
     enabled: null,
@@ -312,8 +357,7 @@ AndroidUiHierarchy parseUiHierarchyTree(String xml) {
       continue;
     }
 
-    final attrs = readNodeAttributes(token);
-    final rect = parseBounds(attrs.bounds);
+    final attrs = _readAndroidUiNodeMetadata(token);
     final parent = stack.last;
     final semanticText = _firstNonEmptyAndroidText(attrs.text, attrs.desc);
 
@@ -322,7 +366,8 @@ AndroidUiHierarchy parseUiHierarchyTree(String xml) {
       label: semanticText,
       value: semanticText,
       identifier: attrs.resourceId,
-      rect: rect,
+      packageName: attrs.packageName,
+      rect: attrs.rect,
       enabled: attrs.enabled,
       hittable: attrs.clickable ?? attrs.focusable,
       depth: parent.depth + 1,

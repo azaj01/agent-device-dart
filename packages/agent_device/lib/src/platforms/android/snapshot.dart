@@ -29,6 +29,8 @@ class AndroidSnapshotOptions {
   final AndroidSnapshotHelperArtifact? helperArtifact;
   final AndroidSnapshotHelperInstallPolicy helperInstallPolicy;
   final AndroidAdbExecutor? helperAdb;
+  final int? helperWaitForIdleTimeoutMs;
+  final bool? includeHiddenContentHints;
 
   const AndroidSnapshotOptions({
     this.snapshot = const SnapshotOptions(),
@@ -36,6 +38,8 @@ class AndroidSnapshotOptions {
     this.helperInstallPolicy =
         AndroidSnapshotHelperInstallPolicy.missingOrOutdated,
     this.helperAdb,
+    this.helperWaitForIdleTimeoutMs,
+    this.includeHiddenContentHints,
   });
 }
 
@@ -62,17 +66,21 @@ snapshotAndroid(
   final xml = capture.xml;
   final snapshotOptions = options.snapshot;
 
+  final includeHiddenContentHints = options.includeHiddenContentHints != false;
+
   if (!(snapshotOptions.interactiveOnly ?? false)) {
     final parsed = parseUiHierarchy(
       xml,
       androidSnapshotMaxNodes,
       snapshotOptions,
     );
-    final nativeHints = await _deriveScrollableContentHintsIfNeeded(
-      serial,
-      parsed.nodes,
-    );
-    _applyHiddenContentHintsToNodes(nativeHints, parsed.nodes);
+    if (includeHiddenContentHints) {
+      final nativeHints = await _deriveScrollableContentHintsIfNeeded(
+        serial,
+        parsed.nodes,
+      );
+      _applyHiddenContentHintsToNodes(nativeHints, parsed.nodes);
+    }
     return (
       nodes: parsed.nodes,
       truncated: parsed.truncated,
@@ -99,26 +107,29 @@ snapshotAndroid(
     androidSnapshotMaxNodes,
     snapshotOptions,
   );
-  final nativeHints = await _deriveScrollableContentHintsIfNeeded(
-    serial,
-    fullSnapshot.nodes,
-  );
 
-  _applyHiddenContentHintsToInteractiveNodes(
-    nativeHints,
-    fullSnapshot,
-    interactiveSnapshot,
-  );
-
-  if (nativeHints.isEmpty) {
-    final presentationHints = deriveMobileSnapshotHiddenContentHints(
-      attachRefs(fullSnapshot.nodes),
+  if (includeHiddenContentHints) {
+    final nativeHints = await _deriveScrollableContentHintsIfNeeded(
+      serial,
+      fullSnapshot.nodes,
     );
+
     _applyHiddenContentHintsToInteractiveNodes(
-      presentationHints,
+      nativeHints,
       fullSnapshot,
       interactiveSnapshot,
     );
+
+    if (nativeHints.isEmpty) {
+      final presentationHints = deriveMobileSnapshotHiddenContentHints(
+        attachRefs(fullSnapshot.nodes),
+      );
+      _applyHiddenContentHintsToInteractiveNodes(
+        presentationHints,
+        fullSnapshot,
+        interactiveSnapshot,
+      );
+    }
   }
 
   return (
@@ -205,7 +216,9 @@ _captureAndroidUiHierarchyOnce(
           adb: adb,
           packageName: artifact.manifest.packageName,
           instrumentationRunner: artifact.manifest.instrumentationRunner,
-          waitForIdleTimeoutMs: androidSnapshotHelperWaitForIdleTimeoutMs,
+          waitForIdleTimeoutMs:
+              options.helperWaitForIdleTimeoutMs ??
+              androidSnapshotHelperWaitForIdleTimeoutMs,
           timeoutMs: _helperCaptureTimeoutMs,
           commandTimeoutMs: _helperCommandTimeoutMs,
         ),

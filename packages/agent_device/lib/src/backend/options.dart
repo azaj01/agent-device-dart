@@ -212,18 +212,59 @@ enum BackendAlertAction {
   String toString() => value;
 }
 
+/// Alert platform classification.
+enum AlertPlatform {
+  android('android'),
+  ios('ios'),
+  macos('macos');
+
+  final String value;
+
+  const AlertPlatform(this.value);
+
+  @override
+  String toString() => value;
+}
+
+/// Alert source classification.
+enum AlertSource {
+  permission('permission'),
+  nativeDialog('native-dialog'),
+  systemDialog('system-dialog');
+
+  final String value;
+
+  const AlertSource(this.value);
+
+  @override
+  String toString() => value;
+}
+
 /// Information about an alert.
 class BackendAlertInfo {
   final String? title;
   final String? message;
   final List<String>? buttons;
+  final AlertPlatform? platform;
+  final AlertSource? source;
+  final String? packageName;
 
-  const BackendAlertInfo({this.title, this.message, this.buttons});
+  const BackendAlertInfo({
+    this.title,
+    this.message,
+    this.buttons,
+    this.platform,
+    this.source,
+    this.packageName,
+  });
 
   Map<String, Object?> toJson() => <String, Object?>{
     if (title != null) 'title': title,
     if (message != null) 'message': message,
     if (buttons != null) 'buttons': buttons,
+    if (platform != null) 'platform': platform!.value,
+    if (source != null) 'source': source!.value,
+    if (packageName != null) 'packageName': packageName,
   };
 }
 

@@ -10,9 +10,8 @@ import '../../utils/exec.dart';
 import '../../utils/timeouts.dart';
 import 'adb.dart';
 import 'device_input_state.dart';
+import 'fill_verification.dart' as fill_verification;
 import 'input_ownership.dart';
-import 'snapshot.dart';
-import 'ui_hierarchy.dart';
 
 /// Tap at the specified coordinates.
 Future<void> pressAndroid(String serial, int x, int y) async {
@@ -163,7 +162,7 @@ Future<void> fillAndroid(
         ),
       ];
 
-  String? lastActual;
+  fill_verification.AndroidFillVerification? lastVerification;
 
   for (final attempt in attempts) {
     await focusAndroid(serial, x, y);
@@ -181,15 +180,32 @@ Future<void> fillAndroid(
       attempt.chunkSize,
       attempt.inputDelayMs,
     );
-    final verification = await _verifyAndroidFilledText(serial, x, y, text);
-    lastActual = verification.actual;
+    final verification = await fill_verification.verifyAndroidFilledText(
+      serial,
+      x,
+      y,
+      text,
+    );
+    lastVerification = verification;
     if (verification.ok) return;
   }
 
+  final failureMsg = fill_verification.androidFillFailureMessage(
+    lastVerification,
+  );
+  final details = fill_verification.androidFillFailureDetails(
+    text,
+    lastVerification,
+  );
   throw AppError(
     AppErrorCodes.commandFailed,
-    'Android fill verification failed',
-    details: {'expected': text, 'actual': lastActual},
+    failureMsg,
+    details: {
+      'expected': details.expected ?? text,
+      'actual': details.actual ?? lastVerification?.actual,
+      'failureReason': details.failureReason.value,
+      if (details.hint != null) 'hint': details.hint,
+    },
   );
 }
 
@@ -253,49 +269,8 @@ Future<Map<String, int>> getAndroidScreenSize(String serial) async {
 }
 
 /// Read text content at the specified point from the UI hierarchy.
-Future<String?> readAndroidTextAtPoint(String serial, int x, int y) async {
-  final xml = await dumpUiHierarchy(serial);
-  final nodeRegex = RegExp(r'<node\b[^>]*>');
-  ({String text, int area})? focusedEdit;
-  ({String text, int area})? editAtPoint;
-  ({String text, int area})? anyAtPoint;
-
-  for (final match in nodeRegex.allMatches(xml)) {
-    final node = match.group(0)!;
-    final attrs = readNodeAttributes(node);
-    final rect = parseBounds(attrs.bounds);
-    if (rect == null) continue;
-    final className = attrs.className ?? '';
-    final text = _decodeXmlEntities(attrs.text ?? '');
-    final focused = attrs.focused ?? false;
-    if (text.isEmpty) continue;
-    final area = ((rect.width * rect.height).abs().round()).clamp(1, 1 << 30);
-    final containsPoint =
-        x >= rect.x &&
-        x <= (rect.x + rect.width).toInt() &&
-        y >= rect.y &&
-        y <= (rect.y + rect.height).toInt();
-
-    if (focused && _isEditTextClass(className)) {
-      if (focusedEdit == null || area <= focusedEdit.area) {
-        focusedEdit = (text: text, area: area);
-      }
-      continue;
-    }
-    if (containsPoint && _isEditTextClass(className)) {
-      if (editAtPoint == null || area <= editAtPoint.area) {
-        editAtPoint = (text: text, area: area);
-      }
-      continue;
-    }
-    if (containsPoint) {
-      if (anyAtPoint == null || area <= anyAtPoint.area) {
-        anyAtPoint = (text: text, area: area);
-      }
-    }
-  }
-
-  return focusedEdit?.text ?? editAtPoint?.text ?? anyAtPoint?.text;
+Future<String?> readAndroidTextAtPoint(String serial, int x, int y) {
+  return fill_verification.readAndroidTextAtPoint(serial, x, y);
 }
 
 // ===== Private helpers =====
@@ -421,51 +396,6 @@ String _encodeAndroidInputText(String text) {
   return text.replaceAll(' ', '%s');
 }
 
-Future<({String? actual, bool ok})> _verifyAndroidFilledText(
-  String serial,
-  int x,
-  int y,
-  String expected,
-) async {
-  const verificationDelaysMs = [0, 150, 350];
-  String? lastActual;
-  ({String? actual, bool ok})? stableVerification;
-
-  for (final delayMs in verificationDelaysMs) {
-    if (delayMs > 0) {
-      await sleep(Duration(milliseconds: delayMs));
-    }
-    lastActual = await readAndroidTextAtPoint(serial, x, y);
-    if (_isAcceptableAndroidFillMatch(lastActual, expected)) {
-      stableVerification = (actual: lastActual, ok: true);
-    } else {
-      stableVerification = null;
-    }
-  }
-
-  return stableVerification ?? (actual: lastActual, ok: false);
-}
-
-bool _isAcceptableAndroidFillMatch(String? actual, String expected) {
-  if (actual == expected) {
-    return true;
-  }
-  final normalizedActual = _normalizeFillVerificationText(actual);
-  final normalizedExpected = _normalizeFillVerificationText(expected);
-  if (normalizedActual.isEmpty || normalizedExpected.isEmpty) {
-    return false;
-  }
-  if (normalizedActual == normalizedExpected) {
-    return true;
-  }
-  // Stricter matching: only exact after normalization
-  return false;
-}
-
-String _normalizeFillVerificationText(String? value) {
-  return (value ?? '').replaceAll(RegExp(r'\s+'), ' ').trim();
-}
-
 bool _isAndroidInputTextUnsupported(Object error) {
   if (error is! AppError) return false;
   if (error.code != AppErrorCodes.commandFailed) return false;
@@ -532,20 +462,6 @@ Future<void> _clearFocusedText(String serial, int count) async {
       const ExecOptions(allowFailure: true),
     );
   }
-}
-
-bool _isEditTextClass(String className) {
-  final lower = className.toLowerCase();
-  return lower.contains('edittext') || lower.contains('textfield');
-}
-
-String _decodeXmlEntities(String value) {
-  return value
-      .replaceAll('&quot;', '"')
-      .replaceAll('&apos;', "'")
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&amp;', '&');
 }
 
 int _clampCount(int value, int min, int max) {

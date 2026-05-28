@@ -20,6 +20,21 @@ const _fallbackInputMethodPackages = {
   'com.microsoft.swiftkey',
 };
 
+/// Check if a node (by package/resource) is owned by the input method.
+///
+/// Named-parameter variant matching `isAndroidInputMethodOwnedNode` in TS.
+bool isAndroidInputMethodOwnedNode({
+  String? packageName,
+  String? resourceId,
+  String? activeInputMethodPackage,
+}) {
+  return isAndroidInputMethodOwned(
+    packageName,
+    resourceId: resourceId,
+    activeInputMethodPackage: activeInputMethodPackage,
+  );
+}
+
 /// Check if a package/resource is owned by the input method.
 bool isAndroidInputMethodOwned(
   String? packageName, {

@@ -329,6 +329,59 @@ class IosBackend extends Backend {
   }
 
   // =========================================================================
+  // Alerts
+  // =========================================================================
+
+  @override
+  Future<BackendAlertResult> handleAlert(
+    BackendCommandContext ctx,
+    BackendAlertAction action, [
+    Map<String, Object?>? options,
+  ]) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    // Map 'wait' to 'get' — iOS runner does not have a wait variant; the
+    // wait loop lives above this layer in the daemon handler (snapshot-alert).
+    final runnerAction = action == BackendAlertAction.wait
+        ? 'get'
+        : action.value;
+    final res = await IosRunnerClient.send(session, <String, Object?>{
+      'command': 'alert',
+      'action': runnerAction,
+      'appBundleId': ?bundleId,
+    });
+    if (!res.ok) {
+      throw AppError(
+        AppErrorCodes.commandFailed,
+        'iOS runner alert failed: ${res.errorMessage ?? 'unknown error'}',
+      );
+    }
+    // Parse the runner's JSON response into a BackendAlertResult.
+    final data = res.data;
+    final alertMap = data is Map ? data['alert'] : null;
+    BackendAlertInfo? alertInfo;
+    if (alertMap is Map) {
+      final rawButtons = alertMap['buttons'];
+      alertInfo = BackendAlertInfo(
+        title: alertMap['title'] as String?,
+        message: alertMap['message'] as String?,
+        buttons: rawButtons is List
+            ? rawButtons.whereType<String>().toList()
+            : null,
+      );
+    }
+    if (action == BackendAlertAction.accept ||
+        action == BackendAlertAction.dismiss) {
+      return BackendAlertHandledResult(
+        handled: true,
+        alert: alertInfo,
+        button: data is Map ? data['button'] as String? : null,
+      );
+    }
+    return BackendAlertStatusResult(alert: alertInfo);
+  }
+
+  // =========================================================================
   // Recording
   // =========================================================================
 
