@@ -13,6 +13,7 @@ import 'package:agent_device/src/backend/backend.dart';
 import 'package:agent_device/src/diagnostics/log_stream_record.dart';
 import 'package:agent_device/src/platforms/setting_state.dart';
 import 'package:agent_device/src/runtime/paths.dart';
+import 'package:agent_device/src/snapshot/ios_presentation.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
@@ -188,9 +189,11 @@ class IosBackend extends Backend {
       );
     }
     final rawNodes = (data['nodes'] as List?) ?? const [];
-    final snapshotNodes = attachRefs(
-      rawNodes.map(_rawNodeFromJson).whereType<RawSnapshotNode>().toList(),
-    );
+    final parsedNodes = rawNodes.map(_rawNodeFromJson).whereType<RawSnapshotNode>().toList();
+    final presentedNodes = _shouldPresentIosInteractiveSnapshot(options)
+        ? presentIosInteractiveSnapshot(parsedNodes)
+        : parsedNodes;
+    final snapshotNodes = attachRefs(presentedNodes);
     return BackendSnapshotResult(
       nodes: snapshotNodes,
       truncated: data['truncated'] == true,
@@ -1649,6 +1652,13 @@ class IosBackend extends Backend {
     _IosKindCache.instance.set(udid, kind);
     return kind;
   }
+}
+
+/// Returns true when the iOS interactive snapshot presentation pipeline should
+/// be applied.  Mirrors `shouldPresentIosInteractiveSnapshot` in the upstream
+/// `snapshot-capture.ts` handler: interactiveOnly flag set and raw mode off.
+bool _shouldPresentIosInteractiveSnapshot(BackendSnapshotOptions? options) {
+  return options?.interactiveOnly == true && options?.raw != true;
 }
 
 String _shellQuote(String s) => "'${s.replaceAll("'", r"'\''")}'";
