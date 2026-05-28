@@ -107,7 +107,7 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `59d28e84` | refactor: add provider-first device lab tests (#542) | n/a | — | TS test infra |
 | `d67e9886` | fix: ios press idle timeout (#543) | ported | `1ed2e6e` | Swift runner quiescence skip |
 | `c1550721` | fix: collapse Android snapshot row noise (#545) | ported | `b5ed594` | Row-noise collapse in presentation module |
-| `d268b79a` | fix: report blockers on wait timeout (#546) | pending | — | Wait timeout blockers; no Dart daemon handler |
+| `d268b79a` | fix: report blockers on wait timeout (#546) | ported | (see note) | `wait_current_surface.dart` + `agent_device.dart` wait() enrichment; 4 tests. Deviations: Dart wait() is a direct polling loop (not daemon response wrapping), so surface enrichment happens inline on timeout rather than via response-level interception. `isWaitTimeoutMessage` regex adapted to match Dart error format (`contains('timed out')`). |
 | `dea6c3b1` | fix: compact unchanged snapshot output (#547) | ported | `d7d725e` | `SnapshotUnchanged` type, `presentationKey` on `SnapshotState`, `unchanged.dart`, `forceFull` param; no CLI layer; `focused` field omitted from comparable key (not yet in Dart `SnapshotNode`) |
 | `8f722c3c` | docs: guide bounded react devtools profiling (#548) | n/a | — | RN docs |
 | `5c6c89e7` | docs: update PR guidance (#550) | n/a | — | Docs |

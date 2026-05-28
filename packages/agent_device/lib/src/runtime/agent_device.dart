@@ -19,6 +19,7 @@ import 'package:agent_device/src/utils/png.dart' as png;
 import 'contract.dart';
 import 'interaction_target.dart';
 import 'session_store.dart';
+import 'wait_current_surface.dart';
 
 /// Selector filter used by [AgentDevice.open] to pick which connected
 /// device to bind a session to. At least one of [serial], [name], or
@@ -973,15 +974,32 @@ class AgentDevice {
       }
       if (last.pass) return last;
       if (clock.now() >= deadline) {
+        final baseMessage =
+            'wait "$predicate" timed out after ${timeout.inMilliseconds}ms.';
+        final baseDetails = <String, Object?>{
+          'predicate': predicate,
+          'timeoutMs': timeout.inMilliseconds,
+          'lastActualText': last.actualText,
+          'lastDetails': last.details,
+        };
+        // Attempt a best-effort snapshot of the current surface to surface
+        // diagnostic info about what's visible (e.g. permission dialogs,
+        // wrong-app foreground) that may explain why the element was not found.
+        final surface = await inspectCurrentSurface(backend, await _ctx()).catchError((_) => null);
+        if (surface != null) {
+          throw AppError(
+            AppErrorCodes.commandFailed,
+            '$baseMessage Current surface: ${surface.summary}.',
+            details: {
+              ...baseDetails,
+              'currentSurface': surface.details.toJson(),
+            },
+          );
+        }
         throw AppError(
           AppErrorCodes.commandFailed,
-          'wait "$predicate" timed out after ${timeout.inMilliseconds}ms.',
-          details: {
-            'predicate': predicate,
-            'timeoutMs': timeout.inMilliseconds,
-            'lastActualText': last.actualText,
-            'lastDetails': last.details,
-          },
+          baseMessage,
+          details: baseDetails,
         );
       }
       await clock.sleep(pollInterval);
