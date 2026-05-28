@@ -863,11 +863,11 @@ class IosBackend extends Backend {
           '`agent-device open <bundleId>` first).',
         );
       }
-      final predicate = [
-        'subsystem == "$bundleId"',
-        'processImagePath ENDSWITH[c] "/$bundleId"',
-        'senderImagePath ENDSWITH[c] "/$bundleId"',
-      ].join(' OR ');
+      final executableName = await _resolveIosSimulatorExecutableName(
+        udid: udid,
+        appBundleId: bundleId,
+      );
+      final predicate = _buildAppleLogPredicate(bundleId, executableName);
       script =
           'exec xcrun simctl spawn '
           '${_shellQuote(udid)} log stream '
@@ -1165,11 +1165,11 @@ class IosBackend extends Backend {
         'first so we know which app\'s logs to filter to.',
       );
     }
-    final predicate = [
-      'subsystem == "$bundleId"',
-      'processImagePath ENDSWITH[c] "/$bundleId"',
-      'senderImagePath ENDSWITH[c] "/$bundleId"',
-    ].join(' OR ');
+    final executableName = await _resolveIosSimulatorExecutableName(
+      udid: udid,
+      appBundleId: bundleId,
+    );
+    final predicate = _buildAppleLogPredicate(bundleId, executableName);
     final args = <String>[
       'simctl',
       'spawn',
@@ -1413,7 +1413,7 @@ class IosBackend extends Backend {
     if (kind == 'device') {
       await launchIosDeviceProcess(udid, bundleId);
     } else {
-      await openIosApp(udid, bundleId);
+      await openIosApp(udid, bundleId, launchConsole: options?.launchConsole);
     }
     return null;
   }
@@ -1652,6 +1652,62 @@ class IosBackend extends Backend {
 }
 
 String _shellQuote(String s) => "'${s.replaceAll("'", r"'\''")}'";
+
+/// Build an `os_log` predicate string that matches logs from [appBundleId].
+/// When [executableName] is provided (the app's `CFBundleExecutable`), additional
+/// clauses are added to match process-name-based log entries that don't use
+/// a bundle-id subsystem (common in apps that use non-framework logging).
+String _buildAppleLogPredicate(String appBundleId, [String? executableName]) {
+  final escapedBundleId = _escapeAppleLogPredicateString(appBundleId);
+  final clauses = [
+    'subsystem == "$escapedBundleId"',
+    // App frameworks/extensions often log through subsystem names prefixed by
+    // the app bundle id.
+    'subsystem CONTAINS "$escapedBundleId"',
+    'processImagePath ENDSWITH[c] "/$escapedBundleId"',
+    'senderImagePath ENDSWITH[c] "/$escapedBundleId"',
+  ];
+  if (executableName != null && executableName.isNotEmpty) {
+    final escapedExec = _escapeAppleLogPredicateString(executableName);
+    clauses.addAll([
+      'process == "$escapedExec"',
+      'processImagePath ENDSWITH[c] "/$escapedExec"',
+      'senderImagePath ENDSWITH[c] "/$escapedExec"',
+      'processImagePath CONTAINS[c] "/$escapedExec.app/"',
+      'senderImagePath CONTAINS[c] "/$escapedExec.app/"',
+    ]);
+  }
+  return clauses.join(' OR ');
+}
+
+String _escapeAppleLogPredicateString(String value) =>
+    value.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
+
+/// Resolve the `CFBundleExecutable` name of an installed simulator app via
+/// `simctl get_app_container` + `plutil -extract CFBundleExecutable`.
+/// Returns `null` on any failure so callers fall back to bundle-id matching.
+Future<String?> _resolveIosSimulatorExecutableName({
+  required String udid,
+  required String appBundleId,
+}) async {
+  final containerResult = await runCmd(
+    'xcrun',
+    buildSimctlArgs(['get_app_container', udid, appBundleId, 'app']),
+    const ExecOptions(allowFailure: true, timeoutMs: 4000),
+  );
+  if (containerResult.exitCode != 0) return null;
+  final appPath = containerResult.stdout.trim();
+  if (appPath.isEmpty) return null;
+  final plistPath = p.join(appPath, 'Info.plist');
+  final executableResult = await runCmd(
+    'plutil',
+    ['-extract', 'CFBundleExecutable', 'raw', '-o', '-', plistPath],
+    const ExecOptions(allowFailure: true, timeoutMs: 4000),
+  );
+  if (executableResult.exitCode != 0) return null;
+  final name = executableResult.stdout.trim();
+  return name.isNotEmpty ? name : null;
+}
 
 Future<void> _sendOrThrow(
   IosRunnerSession session,

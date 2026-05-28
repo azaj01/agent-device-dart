@@ -426,7 +426,12 @@ class BackendOpenTarget {
 class BackendOpenOptions {
   final bool? relaunch;
 
-  const BackendOpenOptions({this.relaunch});
+  /// iOS simulator only: path to capture launch-time stdout/stderr from the
+  /// `simctl launch --console-pty` invocation. Not valid for URL opens or
+  /// non-simulator targets.
+  final String? launchConsole;
+
+  const BackendOpenOptions({this.relaunch, this.launchConsole});
 }
 
 // ============================================================================

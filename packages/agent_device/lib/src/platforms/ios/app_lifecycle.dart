@@ -4,6 +4,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
@@ -132,12 +133,29 @@ Future<List<IosAppInfo>> listIosApps(
   return apps;
 }
 
+/// How long `simctl launch --console-pty` is allowed to run before the
+/// console capture is considered complete and the process output is flushed.
+const _iosSimulatorConsoleCaptureDuration = Duration(milliseconds: 25000);
+
 /// Launch an app by bundle id on [udid]. Returns the PID reported by
 /// `simctl launch`.
-Future<int?> openIosApp(String udid, String bundleId) async {
+///
+/// When [launchConsole] is set, `simctl launch --console-pty` is used to
+/// capture the launch-time stdout/stderr to the given file path.
+/// Only valid for iOS simulator targets.
+Future<int?> openIosApp(
+  String udid,
+  String bundleId, {
+  String? launchConsole,
+}) async {
+  final launchArgs = _buildIosSimulatorLaunchArgs(udid, bundleId, launchConsole: launchConsole);
+  if (launchConsole != null && launchConsole.isNotEmpty) {
+    await _runIosSimulatorConsoleLaunch(launchArgs, launchConsole);
+    return null;
+  }
   final result = await runCmd(
     'xcrun',
-    buildSimctlArgs(['launch', udid, bundleId]),
+    launchArgs,
     const ExecOptions(timeoutMs: 30000),
   );
   // Output format: "<bundleId>: <pid>"
@@ -146,6 +164,57 @@ Future<int?> openIosApp(String udid, String bundleId) async {
     return int.tryParse(match.group(1)!);
   }
   return null;
+}
+
+List<String> _buildIosSimulatorLaunchArgs(
+  String udid,
+  String bundleId, {
+  String? launchConsole,
+}) {
+  final args = ['launch'];
+  if (launchConsole != null && launchConsole.isNotEmpty) args.add('--console-pty');
+  args.add(udid);
+  args.add(bundleId);
+  return buildSimctlArgs(args);
+}
+
+/// Run `simctl launch --console-pty` and write the combined stdout/stderr
+/// to [logPath]. Treats a timeout as a graceful completion — the app
+/// launched and the console window was captured up to the timeout.
+Future<void> _runIosSimulatorConsoleLaunch(
+  List<String> launchArgs,
+  String logPath,
+) async {
+  await File(logPath).parent.create(recursive: true);
+  final timeoutMs = _iosSimulatorConsoleCaptureDuration.inMilliseconds;
+  String stdout = '';
+  String stderr = '';
+  try {
+    final result = await runCmd(
+      'xcrun',
+      launchArgs,
+      ExecOptions(allowFailure: true, timeoutMs: timeoutMs),
+    );
+    stdout = result.stdout;
+    stderr = result.stderr;
+  } on AppError catch (e) {
+    // A timeout is expected — the console capture window closed when the app
+    // finished its startup output. Use whatever was captured.
+    final details = e.details;
+    if (details != null && details['timeoutMs'] == timeoutMs) {
+      stdout = details['stdout'] as String? ?? '';
+      stderr = details['stderr'] as String? ?? '';
+    } else {
+      rethrow;
+    }
+  }
+  await File(logPath).writeAsString(_joinProcessOutput(stdout, stderr));
+}
+
+String _joinProcessOutput(String stdout, String stderr) {
+  if (stdout.isEmpty || stderr.isEmpty) return '$stdout$stderr';
+  if (stdout.endsWith('\n') || stdout.endsWith('\r')) return '$stdout$stderr';
+  return '$stdout\n$stderr';
 }
 
 /// Terminate an app by bundle id on [udid]. Succeeds even if the app
