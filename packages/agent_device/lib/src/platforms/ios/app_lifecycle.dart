@@ -8,7 +8,73 @@ import 'dart:convert';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
 
+import '../app_resolution_cache.dart';
 import 'simctl.dart';
+
+const Map<String, String> _aliases = {
+  'settings': 'com.apple.Preferences',
+};
+
+final _iosAppResolutionCache = AppResolutionCache<String>();
+
+AppResolutionCacheScope _iosAppResolutionScope(String udid) {
+  return AppResolutionCacheScope(platform: 'ios', deviceId: udid);
+}
+
+/// Resolve an iOS app display name or bundle-id alias to a bundle id.
+///
+/// Exact bundle ids (containing a dot) pass through immediately without
+/// hitting the cache or querying the device.  Display-name matches are
+/// cached for [AppResolutionCache] TTL to avoid repeated `simctl listapps`
+/// calls within a session.
+///
+/// NOTE: This implementation covers simulator/physical-iOS only.  macOS
+/// resolution (`resolveMacOsApp`) is a separate module not yet ported.
+Future<String> resolveIosApp(String udid, String app) async {
+  final trimmed = app.trim();
+  if (trimmed.contains('.')) return trimmed;
+
+  final alias = _aliases[trimmed.toLowerCase()];
+  if (alias != null) return alias;
+
+  final cacheScope = _iosAppResolutionScope(udid);
+  final cached = _iosAppResolutionCache.get(cacheScope, trimmed);
+  if (cached != null) return cached;
+
+  final apps = await listIosApps(udid, userOnly: false);
+  final matches = apps
+      .where((a) => (a.name ?? '').toLowerCase() == trimmed.toLowerCase())
+      .toList();
+
+  if (matches.length == 1) {
+    return _iosAppResolutionCache.set(cacheScope, trimmed, matches[0].bundleId);
+  }
+  if (matches.length > 1) {
+    throw AppError(
+      AppErrorCodes.invalidArgs,
+      'Multiple apps matched "$app"',
+      details: {'matches': matches.map((a) => a.bundleId).toList()},
+    );
+  }
+  throw AppError(
+    AppErrorCodes.appNotInstalled,
+    'No app found matching "$app"',
+  );
+}
+
+/// Invalidates the iOS app-resolution cache for [udid] around [operation].
+///
+/// Use this to wrap install/uninstall operations so that subsequent
+/// display-name lookups reflect the new device state.
+Future<R> invalidateIosAppResolutionWhile<R>(
+  String udid,
+  Future<R> Function() operation,
+) {
+  return _iosAppResolutionCache.invalidateWhile(
+    _iosAppResolutionScope(udid),
+    operation,
+  );
+}
 
 /// A brief view of an installed iOS app, extracted from `simctl listapps`.
 class IosAppInfo {

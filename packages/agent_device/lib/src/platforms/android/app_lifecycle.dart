@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import '../../core/open_target.dart' show isDeepLinkTarget;
 import '../../utils/errors.dart';
 import '../../utils/exec.dart';
+import '../app_resolution_cache.dart';
 import 'adb.dart';
 import 'app_parsers.dart';
 import 'devices.dart';
@@ -23,6 +24,14 @@ const String _androidAmbiguousAppHint =
 final Map<String, ({String type, String value})> _aliases = {
   'settings': (type: 'intent', value: 'android.settings.SETTINGS'),
 };
+
+typedef _AndroidAppResolution = ({String type, String value});
+
+final _androidAppResolutionCache = AppResolutionCache<_AndroidAppResolution>();
+
+AppResolutionCacheScope _androidAppResolutionScope(String deviceId) {
+  return AppResolutionCacheScope(platform: 'android', deviceId: deviceId);
+}
 
 /// Resolve an Android app target (package name or intent alias).
 ///
@@ -43,6 +52,10 @@ Future<({String type, String value})> resolveAndroidApp(
     return alias;
   }
 
+  final cacheScope = _androidAppResolutionScope(deviceId);
+  final cached = _androidAppResolutionCache.get(cacheScope, trimmed);
+  if (cached != null) return cached;
+
   final result = await runCmd(
     'adb',
     adbArgs(deviceId, ['shell', 'pm', 'list', 'packages']),
@@ -58,7 +71,11 @@ Future<({String type, String value})> resolveAndroidApp(
       .toList();
 
   if (matches.length == 1) {
-    return (type: 'package', value: matches[0]);
+    return _androidAppResolutionCache.set(
+      cacheScope,
+      trimmed,
+      (type: 'package', value: matches[0]),
+    );
   }
 
   if (matches.length > 1) {
@@ -656,12 +673,19 @@ Future<String?> _resolveInstalledAndroidPackageName(
 /// Install an APK/AAB from a file path on the device.
 ///
 /// Waits for boot, then calls bundletool for AAB or adb install for APK.
+/// Invalidates the app-resolution cache around the install so that subsequent
+/// display-name lookups reflect the newly installed package.
 Future<void> installAndroidInstallablePath(
   String deviceId,
   String installablePath,
 ) async {
-  await waitForAndroidBoot(deviceId);
-  await _installAndroidAppFiles(deviceId, installablePath);
+  await _androidAppResolutionCache.invalidateWhile(
+    _androidAppResolutionScope(deviceId),
+    () async {
+      await waitForAndroidBoot(deviceId);
+      await _installAndroidAppFiles(deviceId, installablePath);
+    },
+  );
 }
 
 /// Install an app and optionally return the resolved package name.
@@ -728,24 +752,30 @@ installAndroidApp(String deviceId, String appPath) async {
 ///
 /// Uninstalls by app identifier, then installs from the given path.
 /// Preserves the original package name across the reinstall cycle.
+/// Invalidates the app-resolution cache around the full cycle.
 Future<({String package})> reinstallAndroidApp(
   String deviceId,
   String app,
   String appPath,
 ) async {
-  await waitForAndroidBoot(deviceId);
+  return _androidAppResolutionCache.invalidateWhile(
+    _androidAppResolutionScope(deviceId),
+    () async {
+      await waitForAndroidBoot(deviceId);
 
-  final (:package) = await uninstallAndroidApp(deviceId, app);
-  final prepared = await prepareAndroidInstallArtifact(
-    appPath,
-    resolveIdentity: false,
+      final (:package) = await uninstallAndroidApp(deviceId, app);
+      final prepared = await prepareAndroidInstallArtifact(
+        appPath,
+        resolveIdentity: false,
+      );
+      try {
+        await installAndroidInstallablePath(deviceId, prepared.installablePath);
+        return (package: package);
+      } finally {
+        await prepared.cleanup();
+      }
+    },
   );
-  try {
-    await installAndroidInstallablePath(deviceId, prepared.installablePath);
-    return (package: package);
-  } finally {
-    await prepared.cleanup();
-  }
 }
 
 /// Install an APK or AAB file on the device.
