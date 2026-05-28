@@ -22,6 +22,7 @@ import 'input_actions.dart';
 import 'notifications.dart';
 import 'perf.dart';
 import 'screenshot.dart';
+import 'settings.dart' show setAndroidSetting;
 import 'snapshot.dart';
 import 'snapshot_timeout_evidence.dart';
 import 'snapshot_types.dart';
@@ -534,6 +535,25 @@ class AndroidBackend extends Backend {
   // =========================================================================
   // App Management
   // =========================================================================
+
+  @override
+  Future<Map<String, Object?>?> setSetting(
+    BackendCommandContext ctx,
+    String setting,
+    String state, [
+    Map<String, Object?>? options,
+  ]) async {
+    return setAndroidSetting(
+      _serial(ctx),
+      setting,
+      state,
+      appPackage: ctx.appId ?? ctx.appBundleId,
+      permissionTarget: options?['permissionTarget'] as String?,
+      permissionMode: options?['permissionMode'] as String?,
+      latitude: (options?['latitude'] as num?)?.toDouble(),
+      longitude: (options?['longitude'] as num?)?.toDouble(),
+    );
+  }
 
   @override
   Future<BackendActionResult> openApp(

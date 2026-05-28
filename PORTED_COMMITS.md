@@ -67,7 +67,7 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `7d47c679` | fix: persist remote react devtools companion (#489) | n/a | — | RN companion |
 | `10fd2925` | fix: stabilize remote DevTools and install workflow (#490) | n/a | — | RN DevTools |
 | `0fcb1d56` | 0.14.7 | n/a | — | Version bump |
-| `a9064254` | feat: support precise location settings (#491) | ported | `10f51e8` | Android `adb emu geo fix` + coordinate utilities ported; iOS `simctl location set` deferred (setIosSetting not yet in Dart); SettingOptions rename skipped (type not in Dart); flat named params used instead of options object |
+| `a9064254` | feat: support precise location settings (#491) | ported | `10f51e8` | Android `adb emu geo fix` + coordinate utilities ported; iOS `simctl location set` + `privacy grant/revoke location` added in follow-up (see notes); SettingOptions rename skipped (type not in Dart); flat named params used instead of options object |
 | `d2a3742c` | fix: enable tvOS compilation for XCUITest runner (#492) | ported | `1ed2e6e` | RunnerTests+TvRemote.swift |
 | `076f0c07` | chore: upgrade skillgym to 0.8.0 (#493) | n/a | — | skillgym |
 | `25d72895` | feat: add MCP discovery router (#494) | n/a | — | MCP server |

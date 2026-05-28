@@ -618,16 +618,89 @@ String jsonish(String s) =>
 
 /// `settings [target]` — open platform settings, optionally scoped to a
 /// specific settings pane (e.g. `wifi`, `bluetooth`, `privacy`).
+///
+/// `settings <setting> <state> [--latitude X --longitude Y]` — set a
+/// platform setting programmatically (e.g. `settings location set
+/// --latitude 37.7 --longitude -122.4`, `settings location on`).
 class SettingsCommand extends AgentDeviceCommand {
+  SettingsCommand() {
+    argParser
+      ..addOption(
+        'latitude',
+        help: 'Latitude for location set (required when state is "set").',
+        valueHelp: 'degrees',
+      )
+      ..addOption(
+        'longitude',
+        help: 'Longitude for location set (required when state is "set").',
+        valueHelp: 'degrees',
+      )
+      ..addOption(
+        'permission-target',
+        help: 'Permission target for permission setting (camera|microphone|'
+            'photos|contacts|notifications).',
+      )
+      ..addOption(
+        'permission-mode',
+        help: 'Permission mode for photos permission (limited|full).',
+      );
+  }
+
   @override
   String get name => 'settings';
 
   @override
   String get description =>
-      'Open platform settings (optionally scoped to a target pane).';
+      'Open platform settings or set a setting programmatically.\n'
+      '  settings [target]         — open the settings app\n'
+      '  settings <setting> <state> [--latitude X --longitude Y]'
+      '  — set a setting (e.g. settings location set --latitude 37.7 '
+      '--longitude -122.4)';
 
   @override
   Future<int> run() async {
+    // When two positionals are provided treat them as `settings <setting>
+    // <state>` (programmatic set); with zero or one positional fall through
+    // to the legacy `open settings [target]` behaviour.
+    if (positionals.length >= 2) {
+      final setting = positionals[0];
+      final state = positionals[1];
+      final latRaw = argResults?['latitude'] as String?;
+      final lonRaw = argResults?['longitude'] as String?;
+      final latitude = latRaw == null ? null : double.tryParse(latRaw);
+      final longitude = lonRaw == null ? null : double.tryParse(lonRaw);
+      if (latRaw != null && latitude == null) {
+        throw AppError(
+          AppErrorCodes.invalidArgs,
+          '--latitude must be a number.',
+        );
+      }
+      if (lonRaw != null && longitude == null) {
+        throw AppError(
+          AppErrorCodes.invalidArgs,
+          '--longitude must be a number.',
+        );
+      }
+      final permissionTarget =
+          argResults?['permission-target'] as String?;
+      final permissionMode = argResults?['permission-mode'] as String?;
+      final device = await openAgentDevice();
+      final result = await device.setSetting(
+        setting,
+        state,
+        latitude: latitude,
+        longitude: longitude,
+        permissionTarget: permissionTarget,
+        permissionMode: permissionMode,
+      );
+      emitResult(
+        {'setting': setting, 'state': state, ...?result},
+        humanFormat: (_) => 'set $setting: $state'
+            '${result != null ? ' → ${result.entries.map((e) => '${e.key}=${e.value}').join(', ')}' : ''}',
+      );
+      return 0;
+    }
+
     final target = positionals.isEmpty ? null : positionals.first;
     final device = await openAgentDevice();
     await device.openSettings(target);

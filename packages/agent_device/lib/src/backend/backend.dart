@@ -260,6 +260,18 @@ abstract class Backend {
     String? target,
   ]) async => unsupported('openSettings');
 
+  /// Set a platform setting (e.g. location, wifi, appearance).
+  ///
+  /// [setting] is the setting name (e.g. `location`, `wifi`).
+  /// [state] is the desired state (e.g. `on`, `off`, `set`).
+  /// [options] carries extra parameters (e.g. `latitude`, `longitude`).
+  Future<Map<String, Object?>?> setSetting(
+    BackendCommandContext ctx,
+    String setting,
+    String state, [
+    Map<String, Object?>? options,
+  ]) async => unsupported('setSetting');
+
   /// Open the app switcher.
   Future<BackendActionResult> openAppSwitcher(
     BackendCommandContext ctx,

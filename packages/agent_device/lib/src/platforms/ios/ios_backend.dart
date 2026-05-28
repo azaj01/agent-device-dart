@@ -11,10 +11,12 @@ import 'dart:io';
 
 import 'package:agent_device/src/backend/backend.dart';
 import 'package:agent_device/src/diagnostics/log_stream_record.dart';
+import 'package:agent_device/src/platforms/setting_state.dart';
 import 'package:agent_device/src/runtime/paths.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
+import 'package:agent_device/src/utils/location_coordinates.dart';
 import 'package:path/path.dart' as p;
 
 import 'app_lifecycle.dart';
@@ -1230,6 +1232,85 @@ class IosBackend extends Backend {
       );
     }
     return null;
+  }
+
+  // =========================================================================
+  // Settings
+  // =========================================================================
+
+  /// Set an iOS simulator setting.
+  ///
+  /// Supports:
+  /// - `location set` → `xcrun simctl location <udid> set <lat>,<lon>`
+  /// - `location on/off` → `xcrun simctl privacy <udid> grant/revoke location <bundleId>`
+  ///
+  /// Other settings throw [AppErrorCodes.unsupportedOperation].
+  @override
+  Future<Map<String, Object?>?> setSetting(
+    BackendCommandContext ctx,
+    String setting,
+    String state, [
+    Map<String, Object?>? options,
+  ]) async {
+    final udid = _udid(ctx);
+    final normalized = setting.toLowerCase();
+    if (normalized == 'location') {
+      if (state.toLowerCase() == 'set') {
+        final lat = (options?['latitude'] as num?)?.toDouble();
+        final lon = (options?['longitude'] as num?)?.toDouble();
+        final coords = requireLocationCoordinates(lat, lon);
+        final r = await runCmd(
+          'xcrun',
+          [
+            'simctl',
+            'location',
+            udid,
+            'set',
+            '${coords.latitude},${coords.longitude}',
+          ],
+          const ExecOptions(allowFailure: true, timeoutMs: 15000),
+        );
+        if (r.exitCode != 0) {
+          throw AppError(
+            AppErrorCodes.commandFailed,
+            'simctl location set failed for $udid',
+            details: {
+              'stdout': r.stdout,
+              'stderr': r.stderr,
+              'exitCode': r.exitCode,
+            },
+          );
+        }
+        return {'latitude': coords.latitude, 'longitude': coords.longitude};
+      }
+      final enabled = parseSettingState(state);
+      final bundleId = _appBundleId(ctx);
+      if (bundleId == null) {
+        throw AppError(
+          AppErrorCodes.invalidArgs,
+          'location setting requires an active app in session',
+        );
+      }
+      final action = enabled ? 'grant' : 'revoke';
+      final r = await runCmd(
+        'xcrun',
+        ['simctl', 'privacy', udid, action, 'location', bundleId],
+        const ExecOptions(allowFailure: true, timeoutMs: 15000),
+      );
+      if (r.exitCode != 0) {
+        throw AppError(
+          AppErrorCodes.commandFailed,
+          'simctl privacy $action location failed for $udid',
+          details: {
+            'stdout': r.stdout,
+            'stderr': r.stderr,
+            'exitCode': r.exitCode,
+          },
+        );
+      }
+      return null;
+    }
+    unsupported('setSetting($setting) on iOS');
   }
 
   // =========================================================================

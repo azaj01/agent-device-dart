@@ -714,6 +714,35 @@ class AgentDevice {
     await backend.openSettings(await _ctx(), target);
   }
 
+  /// Set a platform setting programmatically.
+  ///
+  /// [setting] is the setting name (e.g. `location`, `wifi`).
+  /// [state] is the desired state (e.g. `on`, `off`, `set`).
+  /// [options] passes extra parameters (e.g. `latitude`, `longitude`).
+  ///
+  /// Returns a result map for settings that produce output (e.g. the resolved
+  /// coordinates for `location set`), or null for void settings.
+  Future<Map<String, Object?>?> setSetting(
+    String setting,
+    String state, {
+    double? latitude,
+    double? longitude,
+    String? permissionTarget,
+    String? permissionMode,
+  }) async {
+    return backend.setSetting(
+      await _ctx(),
+      setting,
+      state,
+      <String, Object?>{
+        'latitude': ?latitude,
+        'longitude': ?longitude,
+        'permissionTarget': ?permissionTarget,
+        'permissionMode': ?permissionMode,
+      },
+    );
+  }
+
   // =========================================================================
   // App Management
   // =========================================================================
