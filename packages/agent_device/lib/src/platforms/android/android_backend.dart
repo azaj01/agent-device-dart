@@ -22,6 +22,9 @@ import 'notifications.dart';
 import 'perf.dart';
 import 'screenshot.dart';
 import 'snapshot.dart';
+import 'snapshot_timeout_evidence.dart';
+import 'snapshot_types.dart';
+import 'ui_hierarchy.dart' show AndroidSnapshotAnalysis;
 
 /// Android platform backend.
 ///
@@ -72,7 +75,11 @@ class AndroidBackend extends Backend {
         raw: options?.raw,
       ),
     );
-    final result = await snapshotAndroid(_serial(ctx), options: opts);
+    final serial = _serial(ctx);
+    final result = await _captureSnapshotWithTimeoutEvidence(
+      serial,
+      opts,
+    );
     // Attach @e<N> refs so Phase 7's target resolution (`findNodeByRef`)
     // works against the snapshot.
     final withRefs = attachRefs(result.nodes);
@@ -95,6 +102,32 @@ class AndroidBackend extends Backend {
   ) async {
     await screenshotAndroid(_serial(ctx), outPath, options?.stabilize);
     return BackendScreenshotResult(path: outPath);
+  }
+
+  /// Calls [snapshotAndroid] and, on timeout, captures a fallback screenshot
+  /// as diagnostic evidence before rethrowing.
+  Future<
+    ({
+      List<RawSnapshotNode> nodes,
+      bool? truncated,
+      AndroidSnapshotAnalysis analysis,
+      AndroidSnapshotBackendMetadata androidSnapshot,
+    })
+  >
+  _captureSnapshotWithTimeoutEvidence(
+    String serial,
+    AndroidSnapshotOptions opts,
+  ) async {
+    try {
+      return await snapshotAndroid(serial, options: opts);
+    } catch (error) {
+      final timeoutError = await maybeBuildAndroidSnapshotTimeoutError(
+        error: error,
+        serial: serial,
+      );
+      if (timeoutError != null) throw timeoutError;
+      rethrow;
+    }
   }
 
   // =========================================================================

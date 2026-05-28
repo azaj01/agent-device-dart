@@ -32,7 +32,7 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `40fe5e23` | fix: improve cloud remote auth UX (#452) | n/a | — | Cloud auth |
 | `7c5b7670` | feat: add skillgym tests (#453) | n/a | — | skillgym |
 | `d77a9211` | feat: add Android snapshot helper (#454) | ported | `a1f2c02` | Java APK + capture/install/artifact; remote download deferred |
-| `83042cc4` | fix: preserve scoped Android snapshot refs (#456) | pending | — | Daemon snapshot-capture handler; no Dart daemon yet |
+| `83042cc4` | fix: preserve scoped Android snapshot refs (#456) | n/a | — | All changes are in daemon layer (session-snapshot.ts, snapshot-runtime.ts, handlers) + output.ts rendering which has no Dart equivalent; Dart port has no daemon or formatSnapshotText |
 | `d1f5d919` | 0.13.3 | n/a | — | Version bump |
 | `5260ac8e` | fix: harden Node runtime cleanup (#457) | n/a | — | Node daemon lifecycle |
 | `2b23d69a` | docs: refresh README positioning (#458) | n/a | — | Docs |
