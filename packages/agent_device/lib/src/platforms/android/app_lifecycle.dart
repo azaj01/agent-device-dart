@@ -7,10 +7,19 @@ import '../../utils/errors.dart';
 import '../../utils/exec.dart';
 import '../app_resolution_cache.dart';
 import 'adb.dart';
-import 'app_parsers.dart';
+import 'app_parsers.dart'
+    show
+        AndroidBlockingDialogFocus,
+        AndroidForegroundApp,
+        parseAndroidBlockingDialogFocus,
+        parseAndroidForegroundApp,
+        parseAndroidLaunchablePackages,
+        parseAndroidUserInstalledPackages;
 import 'devices.dart';
 import 'install_artifact.dart';
 import 'open_target.dart';
+
+export 'app_parsers.dart' show AndroidBlockingDialogFocus;
 
 const String _androidLauncherCategory = 'android.intent.category.LAUNCHER';
 const String _androidLeanbackCategory =
@@ -253,6 +262,38 @@ Future<AndroidForegroundApp> getAndroidAppState(String deviceId) async {
   if (activityFocus != null) return activityFocus;
 
   return AndroidForegroundApp();
+}
+
+/// Get the blocking dialog focus state for the device (ANR or "not responding").
+///
+/// Tries the standard dumpsys window commands. Returns [AndroidBlockingDialogFocus]
+/// if a blocking dialog is currently focused, or null if the screen is clear.
+///
+/// Port of `getAndroidBlockingDialogFocus` in `app-lifecycle.ts`.
+Future<AndroidBlockingDialogFocus?> getAndroidBlockingDialogFocus(
+  String deviceId,
+) async {
+  return _readAndroidBlockingDialogFocus(deviceId, [
+    ['shell', 'dumpsys', 'window', 'windows'],
+    ['shell', 'dumpsys', 'window'],
+  ]);
+}
+
+/// Try a sequence of dumpsys commands to extract blocking-dialog focus.
+Future<AndroidBlockingDialogFocus?> _readAndroidBlockingDialogFocus(
+  String deviceId,
+  List<List<String>> commands,
+) async {
+  for (final args in commands) {
+    final result = await runCmd(
+      'adb',
+      adbArgs(deviceId, args),
+      const ExecOptions(allowFailure: true),
+    );
+    final parsed = parseAndroidBlockingDialogFocus(result.stdout);
+    if (parsed != null) return parsed;
+  }
+  return null;
 }
 
 /// Try a sequence of dumpsys commands to extract foreground app.

@@ -25,6 +25,12 @@ import 'screenshot.dart';
 import 'snapshot.dart';
 import 'snapshot_timeout_evidence.dart';
 import 'snapshot_types.dart';
+import 'system_dialog.dart'
+    show
+        AndroidBlockingDialogRecovered,
+        AndroidSystemDialogSession,
+        ensureAndroidBlockingSystemDialogReady,
+        recoverAndroidBlockingSystemDialog;
 import 'ui_hierarchy.dart' show AndroidSnapshotAnalysis;
 
 /// Android platform backend.
@@ -56,6 +62,49 @@ class AndroidBackend extends Backend {
       );
     }
     return serial;
+  }
+
+  /// Build [AndroidSystemDialogSession] from [ctx] for ANR guard checks.
+  ///
+  /// The [recording] flag is derived from the on-disk recorder record so that
+  /// [recoverAndroidBlockingSystemDialog] only fires during active recordings,
+  /// matching the upstream `session.recording` guard.
+  Future<AndroidSystemDialogSession> _systemDialogSession(
+    BackendCommandContext ctx,
+  ) async {
+    final serial = _serial(ctx);
+    final recorder = await _readAndroidRecorder(serial);
+    return AndroidSystemDialogSession(
+      deviceId: serial,
+      appBundleId: ctx.appBundleId ?? ctx.appId,
+      recording: recorder != null,
+      sessionName: ctx.session,
+    );
+  }
+
+  /// Run ANR readiness check before and after [action].
+  ///
+  /// Returns a warning string if an ANR was auto-recovered before the command,
+  /// or null if the command ran cleanly. Throws [AppError] if a blocking
+  /// dialog could not be cleared.
+  Future<String?> _withAndroidAnrGuard(
+    BackendCommandContext ctx,
+    String command,
+    Future<void> Function() action,
+  ) async {
+    final session = await _systemDialogSession(ctx);
+    final before = await ensureAndroidBlockingSystemDialogReady(
+      session: session,
+      command: command,
+      phase: 'before-command',
+    );
+    await action();
+    await ensureAndroidBlockingSystemDialogReady(
+      session: session,
+      command: command,
+      phase: 'after-command',
+    );
+    return before is AndroidBlockingDialogRecovered ? before.warning : null;
   }
 
   // =========================================================================
@@ -141,7 +190,11 @@ class AndroidBackend extends Backend {
     Point point,
     BackendTapOptions? options,
   ) async {
-    await pressAndroid(_serial(ctx), point.x.round(), point.y.round());
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'click', () async {
+      await pressAndroid(serial, point.x.round(), point.y.round());
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
@@ -152,13 +205,17 @@ class AndroidBackend extends Backend {
     String text,
     BackendFillOptions? options,
   ) async {
-    await fillAndroid(
-      _serial(ctx),
-      point.x.round(),
-      point.y.round(),
-      text,
-      options?.delayMs ?? 0,
-    );
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'fill', () async {
+      await fillAndroid(
+        serial,
+        point.x.round(),
+        point.y.round(),
+        text,
+        options?.delayMs ?? 0,
+      );
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
@@ -168,8 +225,23 @@ class AndroidBackend extends Backend {
     String text, [
     Map<String, Object?>? options,
   ]) async {
+    final serial = _serial(ctx);
     final delayMs = (options?['delayMs'] as int?) ?? 0;
-    await typeAndroid(_serial(ctx), text, delayMs);
+    // Recording guard: recover a blocking dialog that appeared during recording.
+    final session = await _systemDialogSession(ctx);
+    if (session.recording) {
+      final recovery = await recoverAndroidBlockingSystemDialog(session);
+      if (recovery == 'failed') {
+        throw AppError(
+          AppErrorCodes.commandFailed,
+          'Android system dialog blocked the recording session',
+        );
+      }
+    }
+    final warning = await _withAndroidAnrGuard(ctx, 'type', () async {
+      await typeAndroid(serial, text, delayMs);
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
@@ -178,7 +250,11 @@ class AndroidBackend extends Backend {
     BackendCommandContext ctx,
     Point point,
   ) async {
-    await focusAndroid(_serial(ctx), point.x.round(), point.y.round());
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'focus', () async {
+      await focusAndroid(serial, point.x.round(), point.y.round());
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
@@ -188,12 +264,16 @@ class AndroidBackend extends Backend {
     Point point,
     BackendLongPressOptions? options,
   ) async {
-    await longPressAndroid(
-      _serial(ctx),
-      point.x.round(),
-      point.y.round(),
-      options?.durationMs ?? 800,
-    );
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'longPress', () async {
+      await longPressAndroid(
+        serial,
+        point.x.round(),
+        point.y.round(),
+        options?.durationMs ?? 800,
+      );
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
@@ -204,14 +284,18 @@ class AndroidBackend extends Backend {
     Point to,
     BackendSwipeOptions? options,
   ) async {
-    await swipeAndroid(
-      _serial(ctx),
-      from.x.round(),
-      from.y.round(),
-      to.x.round(),
-      to.y.round(),
-      options?.durationMs ?? 250,
-    );
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'swipe', () async {
+      await swipeAndroid(
+        serial,
+        from.x.round(),
+        from.y.round(),
+        to.x.round(),
+        to.y.round(),
+        options?.durationMs ?? 250,
+      );
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
@@ -221,13 +305,25 @@ class AndroidBackend extends Backend {
     BackendScrollTarget target,
     BackendScrollOptions options,
   ) async {
+    final serial = _serial(ctx);
     final direction = parseScrollDirection(options.direction);
-    return scrollAndroid(
-      _serial(ctx),
-      direction,
-      amount: options.amount?.toDouble(),
-      pixels: options.pixels?.toDouble(),
-    );
+    Object? scrollResult;
+    final warning = await _withAndroidAnrGuard(ctx, 'scroll', () async {
+      scrollResult = await scrollAndroid(
+        serial,
+        direction,
+        amount: options.amount?.toDouble(),
+        pixels: options.pixels?.toDouble(),
+      );
+    });
+    if (warning != null) {
+      final base = scrollResult;
+      if (base is Map<String, Object?>) {
+        return <String, Object?>{...base, 'warning': warning};
+      }
+      return <String, Object?>{'warning': warning};
+    }
+    return scrollResult;
   }
 
   @override
@@ -314,13 +410,21 @@ class AndroidBackend extends Backend {
     BackendCommandContext ctx,
     BackendBackOptions? options,
   ) async {
-    await backAndroid(_serial(ctx));
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'back', () async {
+      await backAndroid(serial);
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
   @override
   Future<BackendActionResult> pressHome(BackendCommandContext ctx) async {
-    await homeAndroid(_serial(ctx));
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'home', () async {
+      await homeAndroid(serial);
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
@@ -329,13 +433,21 @@ class AndroidBackend extends Backend {
     BackendCommandContext ctx,
     BackendDeviceOrientation orientation,
   ) async {
-    await rotateAndroid(_serial(ctx), _toDeviceRotation(orientation));
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'rotate', () async {
+      await rotateAndroid(serial, _toDeviceRotation(orientation));
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 
   @override
   Future<BackendActionResult> openAppSwitcher(BackendCommandContext ctx) async {
-    await appSwitcherAndroid(_serial(ctx));
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'press', () async {
+      await appSwitcherAndroid(serial);
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
     return null;
   }
 

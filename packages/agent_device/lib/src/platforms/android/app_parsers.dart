@@ -12,6 +12,55 @@ class AndroidForegroundApp {
   AndroidForegroundApp({this.package, this.activity});
 }
 
+/// Focus info for a window that looks like a blocking dialog (ANR / "not responding").
+///
+/// Port of `AndroidBlockingDialogFocus` in `app-parsers.ts`.
+class AndroidBlockingDialogFocus {
+  /// The package name owning the dialog, if detectable.
+  final String? package;
+
+  /// Human-readable window title extracted from the focus line.
+  final String focusedWindow;
+
+  /// The raw focus line from dumpsys output.
+  final String raw;
+
+  const AndroidBlockingDialogFocus({
+    this.package,
+    required this.focusedWindow,
+    required this.raw,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Constants shared between foreground-app and blocking-dialog parsers.
+// ---------------------------------------------------------------------------
+
+const _androidFocusMarkers = [
+  'mCurrentFocus=Window{',
+  'mFocusedApp=AppWindowToken{',
+  'mResumedActivity:',
+  'ResumedActivity:',
+];
+
+final _androidAnrTitlePattern = RegExp(
+  r'\bApplication Not Responding:\s*([A-Za-z0-9_.]+)',
+  caseSensitive: false,
+);
+
+final _androidRespondingTitlePattern = RegExp(
+  r"([^{}]*\bis(?:n't| not)\s+responding[^{}]*)",
+  caseSensitive: false,
+);
+
+final _androidPackagePattern = RegExp(
+  r'\b([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)\b',
+);
+
+// ---------------------------------------------------------------------------
+// Parsers
+// ---------------------------------------------------------------------------
+
 /// Parse launchable package names from Android `pm list packages` output.
 ///
 /// Accepts package names prefixed with "package:" (standard pm list format)
@@ -58,26 +107,79 @@ List<String> parseAndroidUserInstalledPackages(String stdout) {
 /// and extracts package/activity component from the found line. Returns null
 /// if no marker found or parsing fails.
 AndroidForegroundApp? parseAndroidForegroundApp(String text) {
-  const markers = [
-    'mCurrentFocus=Window{',
-    'mFocusedApp=AppWindowToken{',
-    'mResumedActivity:',
-    'ResumedActivity:',
-  ];
+  return _parseAndroidFocusSegment(
+    text,
+    (segment, _) => _parseAndroidComponentFromSegment(segment),
+  );
+}
 
+/// Parse a blocking-dialog focus entry from `dumpsys window` output.
+///
+/// Looks for focus lines containing ANR title patterns or "isn't responding"
+/// text. Returns [AndroidBlockingDialogFocus] with the package name (if
+/// detectable) and the focused window description, or null if the focused
+/// window is not a blocking dialog.
+///
+/// Port of `parseAndroidBlockingDialogFocus` in `app-parsers.ts`.
+AndroidBlockingDialogFocus? parseAndroidBlockingDialogFocus(String text) {
+  return _parseAndroidFocusSegment(
+    text,
+    _parseAndroidBlockingDialogFromSegment,
+  );
+}
+
+/// Generic helper: scan [text] for focus marker lines, extract the segment
+/// after the marker, and call [parse] on each. Returns the first non-null
+/// result, or null.
+T? _parseAndroidFocusSegment<T>(
+  String text,
+  T? Function(String segment, String raw) parse,
+) {
   final lines = text.split('\n');
-  for (final marker in markers) {
+  for (final marker in _androidFocusMarkers) {
     for (final line in lines) {
       final markerIndex = line.indexOf(marker);
       if (markerIndex == -1) continue;
-
+      final raw = line.trim();
       final segment = line.substring(markerIndex + marker.length);
-      final parsed = _parseAndroidComponentFromSegment(segment);
+      final parsed = parse(segment, raw);
       if (parsed != null) return parsed;
     }
   }
-
   return null;
+}
+
+/// Parse an [AndroidBlockingDialogFocus] from a window-focus segment.
+AndroidBlockingDialogFocus? _parseAndroidBlockingDialogFromSegment(
+  String segment,
+  String raw,
+) {
+  final windowText =
+      (segment.split('}').firstOrNull ?? segment).trim();
+
+  final anrMatch = _androidAnrTitlePattern.firstMatch(windowText);
+  if (anrMatch != null) {
+    final packageName = anrMatch.group(1)!;
+    return AndroidBlockingDialogFocus(
+      package: packageName,
+      focusedWindow: 'Application Not Responding: $packageName',
+      raw: raw,
+    );
+  }
+
+  final respondingMatch = _androidRespondingTitlePattern.firstMatch(windowText);
+  if (respondingMatch == null) return null;
+
+  final focusedWindow = respondingMatch
+      .group(1)!
+      .trim()
+      .replaceAll(RegExp(r'\s+'), ' ');
+  final packageName = _androidPackagePattern.firstMatch(focusedWindow)?.group(1);
+  return AndroidBlockingDialogFocus(
+    package: packageName,
+    focusedWindow: focusedWindow,
+    raw: raw,
+  );
 }
 
 /// Parse a package/activity component from a text segment.
