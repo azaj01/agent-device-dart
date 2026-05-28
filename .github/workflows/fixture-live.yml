@@ -20,6 +20,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - uses: actions/setup-java@v5
         with:
@@ -83,6 +84,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Get Dart dependencies
         run: dart pub get
@@ -110,7 +112,15 @@ jobs:
           xcrun simctl bootstatus "$UDID" -b
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
+      - name: Cache iOS runner build
+        id: cache-runner
+        uses: actions/cache@v4
+        with:
+          path: ios-runner/build
+          key: ios-runner-${{ runner.os }}-${{ hashFiles('packages/agent_device/lib/src/native/ios-runner/**/*.swift', 'packages/agent_device/lib/src/native/ios-runner/**/*.m', 'packages/agent_device/lib/src/native/ios-runner/**/*.h', 'packages/agent_device/lib/src/native/ios-runner/**/*.xcodeproj/**') }}
+
       - name: Build iOS runner
+        if: steps.cache-runner.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           xcodebuild build-for-testing \
@@ -119,12 +129,21 @@ jobs:
             -destination "platform=iOS Simulator,id=${{ steps.boot-sim.outputs.udid }}" \
             -derivedDataPath ios-runner/build
 
+      - name: Cache Flutter iOS build
+        id: cache-flutter-ios
+        uses: actions/cache@v4
+        with:
+          path: test_apps/agent_device_fixture_app/build/ios
+          key: flutter-ios-${{ runner.os }}-${{ hashFiles('test_apps/agent_device_fixture_app/lib/**', 'test_apps/agent_device_fixture_app/pubspec.yaml') }}
+
       - name: Build and install Flutter fixture app
         run: |
           set -euo pipefail
-          pushd test_apps/agent_device_fixture_app
-          flutter build ios --debug --simulator
-          popd
+          if [ ! -d "test_apps/agent_device_fixture_app/build/ios/iphonesimulator/Runner.app" ]; then
+            pushd test_apps/agent_device_fixture_app
+            flutter build ios --debug --simulator
+            popd
+          fi
           xcrun simctl install "${{ steps.boot-sim.outputs.udid }}" \
             test_apps/agent_device_fixture_app/build/ios/iphonesimulator/Runner.app
 
