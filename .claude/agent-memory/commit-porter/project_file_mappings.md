@@ -8,6 +8,7 @@ Key file mappings between `agent-device/src/` and `packages/agent_device/lib/src
 
 | TS path | Dart path |
 |---|---|
+| `utils/scroll-edge-state.ts` | `utils/scroll_edge_state.dart` |
 | `utils/snapshot.ts` | `snapshot/snapshot.dart` |
 | `utils/snapshot-tree.ts` | `snapshot/tree.dart` |
 | `utils/snapshot-visibility.ts` | `snapshot/visibility.dart` |
@@ -60,6 +61,8 @@ Notes:
 | `alert-contract.ts` | types inlined into `backend/options.dart` (`AlertPlatform`, `AlertSource`, constants inlined into `alert.dart`) |
 | `platforms/android/alert-detection.ts` | `platforms/android/alert_detection.dart` |
 | `platforms/android/alert.ts` | `platforms/android/alert.dart` |
+| `daemon/android-system-dialog.ts` | `platforms/android/system_dialog.dart` |
+| `platforms/android/app-parsers.ts` | `platforms/android/app_parsers.dart` |
 | `platforms/android/fill-verification.ts` | `platforms/android/fill_verification.dart` |
 | `platforms/fill-diagnostics.ts` | `platforms/fill_diagnostics.dart` |
 
@@ -85,7 +88,14 @@ Notes:
 - TS `requireLocationCoordinates(options: Partial<LocationCoordinates>)` → Dart `requireLocationCoordinates(double? latitude, double? longitude)` — flat params, no options object
 - TS `PermissionSettingOptions` renamed to `SettingOptions` and gained lat/lon — not ported (type not in Dart)
 - Emulator detection uses `serial.startsWith('emulator-')` (Dart has no DeviceInfo in this call path)
-- iOS `simctl location set <lat>,<lon>` deferred — setIosSetting not yet ported to Dart
+- iOS `simctl location set <lat>,<lon>` and `simctl privacy grant/revoke location` ported in follow-up (see `setSetting` stack wiring commit)
+
+**setSetting stack wiring (gap from a9064254 deferred work):**
+- `Backend.setSetting(ctx, setting, state, [options])` added as default-unsupported method
+- `AndroidBackend.setSetting` delegates to `setAndroidSetting(serial, setting, state, ...flatOptions)`
+- `IosBackend.setSetting` handles `location` setting: state `set` → `xcrun simctl location <udid> set <lat>,<lon>`; state `on/off` → `xcrun simctl privacy <udid> grant/revoke location <bundleId>`; all other settings throw `unsupported`
+- `AgentDevice.setSetting(setting, state, {latitude, longitude, permissionTarget, permissionMode})` — named params collected into options map
+- `SettingsCommand` CLI: 2 positionals → programmatic set; 0-1 positionals → open settings (existing behavior preserved)
 
 **AndroidUiNodeMetadata pattern (600e9565):**
 - `readNodeAttributes` and `parseBounds` are private in TS after this refactor; the Dart port made them private too
@@ -96,6 +106,24 @@ Notes:
 - `AndroidFillVerificationNode extends FillDiagnosticNode` — don't redeclare parent fields; use `super.` params
 - Non-nullable narrowing can't be enforced via field override in Dart; add a getter (e.g. `verificationRect`) for non-null access
 - Context classes used as named params in public functions must be public to avoid `library_private_types_in_public_api` lint
+
+**ScrollEdgeState porting pattern (b0e19c9d):**
+- `ScrollEdge` is a `typedef String` (no union/enum needed)
+- `ScrollEdgeTarget` is a plain class with `const empty` factory
+- `isScrollableNodeLike` in Dart takes named params `(type:, role:, subrole:)` — call sites must destructure the node
+- `isNodeVisibleInEffectiveViewport` in Dart requires a pre-built `byIndex` map as 3rd param; `scroll_edge_state.dart` builds it via `buildSnapshotNodeMap`
+- `runScrollEdgePasses<T>` returns a Dart named record `({int passes, T? result})` — callers use `.passes` and `.result`
+- `formatScrollEdgeMessage` takes `double?` for amount (TS uses `number | undefined`)
+- Scroll-to-edge wired into `AgentDevice.scroll()` via `_resolveScrollTarget` + `runScrollEdgePasses`; wires `backend.captureSnapshot` directly (no daemon `interactor.snapshot` call)
+
+**Android ANR recovery pattern (dcc74218):**
+- TS `SessionState` (device.id, appBundleId, recording, name) → Dart `AndroidSystemDialogSession` (plain class with deviceId, appBundleId, recording, sessionName)
+- `recording` flag in Dart is derived from on-disk recorder record (`_readAndroidRecorder(serial) != null`)
+- TS dispatch wiring (interaction.ts, interaction-touch.ts, request-generic-dispatch.ts) maps to `AndroidBackend` methods because `AndroidBackend` is the Dart dispatch layer for Android
+- `_withAndroidAnrGuard(ctx, command, action)` helper wraps before+after checks; returns warning String? or null
+- `AndroidSnapshotOptions` does NOT have `interactiveOnly`/`compact` top-level — use `snapshot: SnapshotOptions(interactiveOnly: false, compact: false)` nested
+- Sealed class `_DialogButtonTapResult` with `_DialogButtonTapOk` / `_DialogButtonTapFailed` variants; extension on sealed for field access
+- `getAndroidBlockingDialogFocus` exported from `app_lifecycle.dart` via `export 'app_parsers.dart' show AndroidBlockingDialogFocus`
 
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.
