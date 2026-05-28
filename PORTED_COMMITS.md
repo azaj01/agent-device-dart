@@ -135,7 +135,7 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `93b04b2c` | docs: simplify README overview (#585) | n/a | — | Docs |
 | `ea217931` | feat: support ios transform gesture (#586) | pending | — | ObjC synthesized gesture; depends on `47b981c8` |
 | `bbe7c06f` | feat: auto-reverse Android localhost opens (#590) | pending | — | Auto `adb reverse` for localhost URLs |
-| `87f087ca` | fix: capture Android snapshot timeout evidence (#591) | pending | — | Fallback screenshot on snapshot timeout |
+| `87f087ca` | fix: capture Android snapshot timeout evidence (#591) | ported | `d02260c` | snapshot_timeout_evidence.dart + android_backend.dart hook; overlay-ref annotation always 'unavailable' (daemon session-snapshot not ported) |
 | `dcc74218` | fix: recover Android app-owned ANRs (#592) | pending | — | Auto-recover app ANRs; depends on `f71371eb` |
 | `819d7dc8` | feat: expose structured MCP command tools (#593) | n/a | — | MCP server only |
 | `25c7ade7` | test: remove 151 unit tests fully covered by integration tests (#595) | n/a | — | TS test infra |
