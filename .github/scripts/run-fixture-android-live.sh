@@ -25,6 +25,10 @@ flutter build apk --debug
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
 cd "$repo_root"
 
+# Disable stylus handwriting overlay — it intercepts adb input text on
+# API 36+ emulators and corrupts fill/type commands.
+adb -s emulator-5554 shell settings put secure stylus_handwriting_enabled 0 || true
+
 dart run packages/agent_device/bin/agent_device.dart open com.example.agent_device_fixture_app --session fixture-android-ci --platform android --serial emulator-5554 --json
 dart run packages/agent_device/bin/agent_device.dart snapshot --session fixture-android-ci --platform android --serial emulator-5554 --json
 
