@@ -89,6 +89,12 @@ class HomeScreen extends StatelessWidget {
             destinationBuilder: DiagnosticsScreen.new,
             launchButtonId: FixtureIds.homeOpenDiagnosticsButton,
           ),
+          const _LaunchCard(
+            title: 'Gesture Lab',
+            description: 'Pinch-to-zoom, pan/drag, and fling gestures.',
+            destinationBuilder: GestureLabScreen.new,
+            launchButtonId: FixtureIds.homeOpenGestureLabButton,
+          ),
           const SizedBox(height: 12),
           Card(
             child: Padding(
@@ -875,4 +881,157 @@ String _recommendationId(String item) {
       return FixtureIds.stateRecommendationCaptureLogs;
   }
   return item;
+}
+
+// ---------------------------------------------------------------------------
+// Gesture Lab
+// ---------------------------------------------------------------------------
+
+class GestureLabScreen extends StatefulWidget {
+  const GestureLabScreen({super.key});
+
+  @override
+  State<GestureLabScreen> createState() => _GestureLabScreenState();
+}
+
+class _GestureLabScreenState extends State<GestureLabScreen> {
+  double _scale = 1.0;
+  Offset _panPosition = Offset.zero;
+  String _flingStatus = 'Idle';
+
+  void _reset() {
+    setState(() {
+      _scale = 1.0;
+      _panPosition = Offset.zero;
+      _flingStatus = 'Idle';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Gesture Lab')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _identifiedText(
+            FixtureIds.gestureScaleText,
+            'Scale: ${_scale.toStringAsFixed(2)}',
+          ),
+          const SizedBox(height: 8),
+          _identifiedText(
+            FixtureIds.gesturePanPositionText,
+            'Pan: ${_panPosition.dx.round()} / ${_panPosition.dy.round()}',
+          ),
+          const SizedBox(height: 8),
+          _identifiedText(
+            FixtureIds.gestureFlingStatusText,
+            'Fling: $_flingStatus',
+          ),
+          const SizedBox(height: 16),
+          _identifiedControl(
+            FixtureIds.gestureResetButton,
+            OutlinedButton(
+              onPressed: _reset,
+              child: const Text('Reset gestures'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Pinch target',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          _identifiedControl(
+            FixtureIds.gesturePinchTarget,
+            GestureDetector(
+              onScaleUpdate: (details) {
+                setState(() {
+                  _scale = details.scale.clamp(0.5, 5.0);
+                });
+              },
+              child: Container(
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${_scale.toStringAsFixed(2)}x',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Pan / drag target',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          _identifiedControl(
+            FixtureIds.gesturePanTarget,
+            GestureDetector(
+              onPanUpdate: (details) {
+                setState(() {
+                  _panPosition += details.delta;
+                });
+              },
+              child: Container(
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '${_panPosition.dx.round()} / ${_panPosition.dy.round()}',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            'Fling target',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          _identifiedControl(
+            FixtureIds.gestureFlingTarget,
+            GestureDetector(
+              onHorizontalDragEnd: (details) {
+                final velocity = details.primaryVelocity ?? 0;
+                setState(() {
+                  if (velocity > 300) {
+                    _flingStatus = 'Flung right';
+                  } else if (velocity < -300) {
+                    _flingStatus = 'Flung left';
+                  } else {
+                    _flingStatus = 'Drag ended (too slow)';
+                  }
+                });
+              },
+              child: Container(
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  _flingStatus,
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

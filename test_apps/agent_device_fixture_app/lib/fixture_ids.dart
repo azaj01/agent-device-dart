@@ -76,5 +76,16 @@ class FixtureIds {
   static const diagnosticsLatestStatusText =
       'fixture.diagnostics.latest_status_text';
 
+  static const homeOpenGestureLabButton =
+      'fixture.home.open_gesture_lab_button';
+
+  static const gestureScaleText = 'fixture.gesture.scale_text';
+  static const gesturePanPositionText = 'fixture.gesture.pan_position_text';
+  static const gestureResetButton = 'fixture.gesture.reset_button';
+  static const gesturePinchTarget = 'fixture.gesture.pinch_target';
+  static const gesturePanTarget = 'fixture.gesture.pan_target';
+  static const gestureFlingTarget = 'fixture.gesture.fling_target';
+  static const gestureFlingStatusText = 'fixture.gesture.fling_status_text';
+
   const FixtureIds._();
 }

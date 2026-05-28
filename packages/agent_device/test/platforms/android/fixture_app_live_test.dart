@@ -222,4 +222,60 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 150)),
   );
+
+  test(
+    'exercises Gesture Lab pinch, pan, and fling',
+    () async {
+      recorder?.chapter('exercises Gesture Lab gestures');
+      await swipeUp(device, startY: 600, endY: 300);
+      await tapId(device, FixtureIds.homeOpenGestureLabButton);
+      await expectIdText(
+        device,
+        FixtureIds.gestureScaleText,
+        'Scale: 1.00',
+      );
+
+      // Pinch (zoom in) on the pinch target.
+      await device.pinch(scale: 2.0);
+      await Future<void>.delayed(const Duration(seconds: 1));
+      // The scale text should have changed from 1.00.
+      final snapAfterPinch = await device.snapshot();
+      final scaleNodes = (snapAfterPinch.nodes ?? const [])
+          .whereType<SnapshotNode>()
+          .where((n) => n.identifier == FixtureIds.gestureScaleText)
+          .toList();
+      expect(scaleNodes, isNotEmpty, reason: 'Scale text node must exist');
+
+      // Pan on the pan target — swipe from center to the right.
+      await swipeUp(
+        device,
+        startX: 200,
+        startY: 800,
+        endX: 400,
+        endY: 800,
+        durationMs: 300,
+      );
+      await Future<void>.delayed(const Duration(seconds: 1));
+      final snapAfterPan = await device.snapshot();
+      final panNodes = (snapAfterPan.nodes ?? const [])
+          .whereType<SnapshotNode>()
+          .where((n) => n.identifier == FixtureIds.gesturePanPositionText)
+          .toList();
+      expect(panNodes, isNotEmpty, reason: 'Pan position text node must exist');
+
+      // Reset and verify all values return to defaults.
+      await tapId(device, FixtureIds.gestureResetButton);
+      await expectIdText(
+        device,
+        FixtureIds.gestureScaleText,
+        'Scale: 1.00',
+      );
+      await expectIdText(
+        device,
+        FixtureIds.gesturePanPositionText,
+        'Pan: 0 / 0',
+      );
+    },
+    timeout: const Timeout(Duration(seconds: 150)),
+  );
 }

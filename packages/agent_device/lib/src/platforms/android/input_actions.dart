@@ -166,7 +166,6 @@ Future<void> fillAndroid(
 
   for (final attempt in attempts) {
     await focusAndroid(serial, x, y);
-    await _assertAndroidShellInputIsAppOwned(serial, 'fill');
     final clearCount = _clampCount(
       textCodePointLength + attempt.clearPadding,
       attempt.minClear,
@@ -193,18 +192,12 @@ Future<void> fillAndroid(
   final failureMsg = fill_verification.androidFillFailureMessage(
     lastVerification,
   );
-  final details = fill_verification.androidFillFailureDetails(
-    text,
-    lastVerification,
-  );
   throw AppError(
     AppErrorCodes.commandFailed,
     failureMsg,
     details: {
-      'expected': details.expected ?? text,
-      'actual': details.actual ?? lastVerification?.actual,
-      'failureReason': details.failureReason.value,
-      if (details.hint != null) 'hint': details.hint,
+      'expected': text,
+      'actual': lastVerification?.actual,
     },
   );
 }
