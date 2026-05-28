@@ -232,10 +232,28 @@ Future<void> tapId(
       InteractionTarget.selector('id=${jsonEncode(id)}'),
     );
     return;
-  } catch (_) {
-    // Direct selector failed — fall back to snapshot-based resolution.
+  } catch (e) {
+    print('[tapId] direct selector for "$id" failed: $e — falling back');
   }
-  await expectVisibleId(device, id, timeout: timeout);
+  try {
+    await expectVisibleId(device, id, timeout: timeout);
+  } catch (e) {
+    // Capture a diagnostic snapshot to understand the current screen.
+    try {
+      final snap = await device.snapshot();
+      final nodes = (snap.nodes ?? const []).whereType<SnapshotNode>().toList();
+      final labels = nodes
+          .map((n) => [n.label, n.identifier]
+              .whereType<String>()
+              .where((s) => s.trim().isNotEmpty)
+              .join(':'))
+          .where((s) => s.isNotEmpty)
+          .take(15)
+          .join(', ');
+      print('[tapId] "$id" not found. Visible: [$labels]');
+    } catch (_) {}
+    rethrow;
+  }
   try {
     await device.tapTarget(
       InteractionTarget.selector(
@@ -245,7 +263,8 @@ Future<void> tapId(
         'id=${jsonEncode(id)}',
       ),
     );
-  } catch (_) {
+  } catch (e) {
+    print('[tapId] selector tap for "$id" failed: $e — trying text match');
     await _tapBestTextMatch(device, id);
   }
 }

@@ -143,10 +143,30 @@ void main() {
         FixtureIds.stateBatchCountText,
         'Batch count: 3',
       );
-      // Scroll down to reveal the bottom buttons — on CI's 402x874
-      // viewport the Load Recommendations button is below the fold.
-      // Without scrolling, the direct selector tap hits off-screen
-      // coordinates and lands on the nav bar back button instead.
+      // Diagnostic: dump visible nodes before tapping Load Recommendations
+      // to understand the CI viewport state.
+      {
+        final diag = await device.snapshot();
+        final nodes = (diag.nodes ?? const [])
+            .whereType<SnapshotNode>()
+            .toList();
+        final ids = nodes
+            .where((n) => n.identifier != null)
+            .map((n) => '${n.identifier} rect=${n.rect}')
+            .join('\n  ');
+        print('[State Lab diag] ${nodes.length} nodes, ids:\n  $ids');
+        final loadBtn = nodes
+            .where(
+              (n) =>
+                  n.identifier ==
+                  FixtureIds.stateLoadRecommendationsButton,
+            )
+            .toList();
+        print(
+          '[State Lab diag] Load Recommendations button: '
+          '${loadBtn.isEmpty ? "NOT FOUND" : "found at ${loadBtn.first.rect}"}',
+        );
+      }
       await swipeUp(device, startY: 600, endY: 300);
       await tapId(device, FixtureIds.stateLoadRecommendationsButton);
       await expectVisibleId(
