@@ -143,32 +143,57 @@ void main() {
         FixtureIds.stateBatchCountText,
         'Batch count: 3',
       );
-      // Diagnostic: dump visible nodes before tapping Load Recommendations
-      // to understand the CI viewport state.
+      // Diagnostic: dump node positions to understand the CI viewport.
       {
         final diag = await device.snapshot();
         final nodes = (diag.nodes ?? const [])
             .whereType<SnapshotNode>()
             .toList();
-        final ids = nodes
-            .where((n) => n.identifier != null)
-            .map((n) => '${n.identifier} rect=${n.rect}')
-            .join('\n  ');
-        print('[State Lab diag] ${nodes.length} nodes, ids:\n  $ids');
-        final loadBtn = nodes
+        for (final n in nodes.where((n) => n.identifier != null)) {
+          final r = n.rect;
+          final rectStr = r != null
+              ? 'x=${r.x} y=${r.y} w=${r.width} h=${r.height}'
+              : 'null';
+          print('[diag] ${n.identifier} [$rectStr] hittable=${n.hittable}');
+        }
+      }
+      await swipeUp(device, startY: 600, endY: 300);
+      // Post-scroll diagnostic
+      {
+        final diag = await device.snapshot();
+        final loadBtn = (diag.nodes ?? const [])
+            .whereType<SnapshotNode>()
             .where(
               (n) =>
                   n.identifier ==
                   FixtureIds.stateLoadRecommendationsButton,
             )
             .toList();
-        print(
-          '[State Lab diag] Load Recommendations button: '
-          '${loadBtn.isEmpty ? "NOT FOUND" : "found at ${loadBtn.first.rect}"}',
-        );
+        if (loadBtn.isNotEmpty) {
+          final r = loadBtn.first.rect;
+          print(
+            '[diag] After scroll, Load Recommendations: '
+            'x=${r?.x} y=${r?.y} w=${r?.width} h=${r?.height} '
+            'hittable=${loadBtn.first.hittable}',
+          );
+        } else {
+          print('[diag] After scroll, Load Recommendations: NOT FOUND');
+        }
       }
-      await swipeUp(device, startY: 600, endY: 300);
       await tapId(device, FixtureIds.stateLoadRecommendationsButton);
+      // Post-tap diagnostic — what screen are we on?
+      {
+        final diag = await device.snapshot();
+        final nodes = (diag.nodes ?? const [])
+            .whereType<SnapshotNode>()
+            .toList();
+        final topLabels = nodes
+            .where((n) => n.label != null && n.label!.isNotEmpty)
+            .take(5)
+            .map((n) => '${n.type}:"${n.label}"')
+            .join(', ');
+        print('[diag] After tap, top nodes: $topLabels');
+      }
       await expectVisibleId(
         device,
         FixtureIds.stateRecommendationWarmCache,
