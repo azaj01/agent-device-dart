@@ -3,7 +3,15 @@ library;
 
 import 'snapshot.dart';
 
-/// Helper to normalize a type string.
+/// Normalize a type string to its lowercase last-segment form.
+///
+/// Strips any dot-prefixed namespace (e.g. `XCUIElementTypeButton` → `button`).
+/// Used by presentation rules to compare accessibility element types
+/// in a platform-agnostic way.
+String normalizeType(String type) => _normalizeType(type);
+
+// Internal implementation kept private so callers within this library can
+// use the shorter name without re-exporting the public symbol accidentally.
 String _normalizeType(String type) {
   var normalized = type.toLowerCase();
   if (normalized.contains('.')) {
@@ -177,7 +185,15 @@ SnapshotNode? findNearestHittableAncestor(
   SnapshotNode node,
 ) {
   if (node.hittable == true) return node;
+  return findNearestAncestor(nodes, node, (parent) => parent.hittable == true);
+}
 
+/// Find the nearest ancestor of [node] satisfying [predicate].
+SnapshotNode? findNearestAncestor(
+  List<SnapshotNode> nodes,
+  SnapshotNode node,
+  bool Function(SnapshotNode) predicate,
+) {
   var current = node;
   final visited = <String>{};
 
@@ -187,7 +203,7 @@ SnapshotNode? findNearestHittableAncestor(
 
     try {
       final parent = nodes.firstWhere((n) => n.index == current.parentIndex);
-      if (parent.hittable == true) return parent;
+      if (predicate(parent)) return parent;
       current = parent;
     } on StateError {
       break;

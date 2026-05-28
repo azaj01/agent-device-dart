@@ -1,8 +1,13 @@
 // Port of agent-device/src/utils/android-helper-snapshot-presentation.ts
+// and agent-device/src/utils/android-helper-presentation/* submodules
 library;
 
 import '../snapshot/snapshot.dart';
 import '../snapshot/tree.dart';
+
+// Re-export detectPossibleRepeatedNavSubtree from its new home so callers
+// that imported it from this file (including existing tests) continue to work.
+export 'repeated_nav_subtree.dart' show detectPossibleRepeatedNavSubtree;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -27,7 +32,8 @@ class AndroidHelperPresentationInput {
 /// Build the presentation input for Android helper snapshots.
 ///
 /// If the snapshot was captured via the Android helper, filters noise
-/// (zero-area nodes, duplicate emails, adjacent structural duplicates, etc.)
+/// (zero-area nodes, rectless scrollable descendants, unlabeled action rows,
+/// repeated action row descendants, adjacent structural duplicates, etc.)
 /// and returns the filtered node list plus a count of removed nodes.
 /// If raw mode is requested or the snapshot was not from the helper,
 /// returns the input nodes unchanged with filteredCount = 0.
@@ -44,32 +50,6 @@ AndroidHelperPresentationInput buildAndroidHelperPresentationInput(
     nodes: filtered,
     filteredCount: nodes.length - filtered.length,
   );
-}
-
-/// Detect whether the snapshot likely contains repeated navigation subtrees.
-///
-/// Returns true if the nodes contain ≥8 duplicates by type+label signature,
-/// which often indicates a bottom navigation or tab bar that was captured
-/// multiple times.
-bool detectPossibleRepeatedNavSubtree(List<SnapshotNode> nodes) {
-  if (nodes.length < 20) {
-    return false;
-  }
-  final counts = <String, int>{};
-  for (final node in nodes) {
-    final type = (node.type ?? '').toLowerCase();
-    final label = _normalizeRepeatedNodeLabel(displayNodeLabel(node));
-    if (label == null) continue;
-    final signature = '$type|$label';
-    counts[signature] = (counts[signature] ?? 0) + 1;
-  }
-  var duplicateCount = 0;
-  for (final count in counts.values) {
-    if (count > 1) {
-      duplicateCount += count;
-    }
-  }
-  return duplicateCount >= 8;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,9 +77,11 @@ List<SnapshotNode> _filterAndroidHelperTextOutputNodes(
 
   final removed = <int>{};
   final replacements = <int, SnapshotNode>{};
+  final nodeIndex = Map.fromEntries(nodes.map((node) => MapEntry(node.index, node)));
   _markZeroAreaNodesForRemoval(nodes, removed);
-  _markBottomNavNodesNearComposerForRemoval(nodes, removed, replacements);
-  _markDuplicateEmailButtonsForRemoval(nodes, removed);
+  _markRectlessScrollableDescendantsForRemoval(nodes, nodeIndex, removed, replacements);
+  _markUnlabeledActionRowsForPromotion(nodes, removed, replacements);
+  _markRepeatedActionRowDescendantsForRemoval(nodes, removed);
   _markAdjacentDuplicateStructuralNodesForRemoval(nodes, removed, replacements);
 
   return nodes
@@ -119,44 +101,190 @@ void _markZeroAreaNodesForRemoval(List<SnapshotNode> nodes, Set<int> removed) {
   }
 }
 
-void _markBottomNavNodesNearComposerForRemoval(
+void _markRectlessScrollableDescendantsForRemoval(
+  List<SnapshotNode> nodes,
+  Map<int, SnapshotNode> nodeIndex,
+  Set<int> removed,
+  Map<int, SnapshotNode> replacements,
+) {
+  for (final node in nodes) {
+    if (removed.contains(node.index) || node.rect != null || _isRootNode(node)) {
+      continue;
+    }
+
+    final scrollAncestor = _findAncestor(node, nodeIndex, _isScrollableNode);
+    if (scrollAncestor != null) {
+      _addHiddenContentHint(
+        replacements,
+        scrollAncestor,
+        _inferRectlessNodeDirection(node, nodes),
+      );
+    }
+    _markNodeAndDescendantsForRemoval(nodes, node.index, removed);
+  }
+}
+
+String? _inferRectlessNodeDirection(
+  SnapshotNode node,
+  List<SnapshotNode> nodes,
+) {
+  final renderedSiblingIndexes = nodes
+      .where(
+        (candidate) =>
+            candidate.parentIndex == node.parentIndex &&
+            candidate.rect != null &&
+            _hasRenderableArea(candidate.rect!),
+      )
+      .map((candidate) => candidate.index)
+      .toList();
+  if (renderedSiblingIndexes.isEmpty) return null;
+
+  // Android helper rectless children are offscreen list content. UIAutomator
+  // traversal order is the only signal left once bounds disappear, so this is
+  // intentionally a conservative above/below hint rather than exact geometry.
+  if (node.index < renderedSiblingIndexes.reduce((a, b) => a < b ? a : b)) {
+    return 'above';
+  }
+  if (node.index > renderedSiblingIndexes.reduce((a, b) => a > b ? a : b)) {
+    return 'below';
+  }
+  return null;
+}
+
+void _addHiddenContentHint(
+  Map<int, SnapshotNode> replacements,
+  SnapshotNode node,
+  String? direction,
+) {
+  if (direction == null) return;
+  final existing = replacements[node.index] ?? node;
+  final newNode = SnapshotNode(
+    index: existing.index,
+    ref: existing.ref,
+    type: existing.type,
+    role: existing.role,
+    subrole: existing.subrole,
+    label: existing.label,
+    value: existing.value,
+    identifier: existing.identifier,
+    rect: existing.rect,
+    enabled: existing.enabled,
+    selected: existing.selected,
+    hittable: existing.hittable,
+    depth: existing.depth,
+    parentIndex: existing.parentIndex,
+    pid: existing.pid,
+    bundleId: existing.bundleId,
+    appName: existing.appName,
+    windowTitle: existing.windowTitle,
+    surface: existing.surface,
+    hiddenContentAbove: (existing.hiddenContentAbove == true || direction == 'above') ? true : null,
+    hiddenContentBelow: (existing.hiddenContentBelow == true || direction == 'below') ? true : null,
+    presentationHints: existing.presentationHints,
+  );
+  replacements[node.index] = newNode;
+}
+
+void _markUnlabeledActionRowsForPromotion(
   List<SnapshotNode> nodes,
   Set<int> removed,
   Map<int, SnapshotNode> replacements,
 ) {
-  final composer = _findBottomEditableNode(nodes);
-  final composerRect = composer?.rect;
-  if (composerRect == null) return;
+  for (final node in nodes) {
+    if (removed.contains(node.index) || !_isUnlabeledActionRow(node)) continue;
 
-  final navNodes = _findBottomNavigationLikeNodes(nodes, composerRect);
-  for (final node in navNodes) {
-    _addPresentationHints(replacements, node, ['likely navigation']);
-    _markDescendantsForRemoval(nodes, node.index, removed);
+    final descendants = _collectDescendants(nodes, node.index);
+    final promotedContent = _collectPromotableRowContent(descendants, node, removed);
+    if (promotedContent.label.isEmpty) continue;
+
+    final existing = replacements[node.index] ?? node;
+    replacements[node.index] = SnapshotNode(
+      index: existing.index,
+      ref: existing.ref,
+      type: existing.type,
+      role: existing.role,
+      subrole: existing.subrole,
+      label: promotedContent.label,
+      value: existing.value,
+      identifier: existing.identifier,
+      rect: existing.rect,
+      enabled: existing.enabled,
+      selected: existing.selected,
+      hittable: existing.hittable,
+      depth: existing.depth,
+      parentIndex: existing.parentIndex,
+      pid: existing.pid,
+      bundleId: existing.bundleId,
+      appName: existing.appName,
+      windowTitle: existing.windowTitle,
+      surface: existing.surface,
+      hiddenContentAbove: existing.hiddenContentAbove,
+      hiddenContentBelow: existing.hiddenContentBelow,
+      presentationHints: existing.presentationHints,
+    );
+    for (final descendantIndex in promotedContent.removableIndexes) {
+      _markNodeAndDescendantsForRemoval(nodes, descendantIndex, removed);
+    }
   }
 }
 
-void _markDuplicateEmailButtonsForRemoval(
+({String label, List<int> removableIndexes}) _collectPromotableRowContent(
+  List<SnapshotNode> descendants,
+  SnapshotNode parent,
+  Set<int> removed,
+) {
+  final labels = <String>[];
+  final removableIndexes = <int>[];
+  final seen = <String>{};
+  for (final descendant in descendants) {
+    if (removed.contains(descendant.index) ||
+        !_isPassiveRowContent(descendant) ||
+        !_isRectContainedBy(descendant.rect, parent.rect)) {
+      continue;
+    }
+    final label = _visibleNodeLabel(descendant).trim().replaceAll(RegExp(r'\s+'), ' ');
+    final normalized = _normalizeStructuralNodeLabel(label);
+    removableIndexes.add(descendant.index);
+    if (label.isEmpty || normalized == null || seen.contains(normalized)) continue;
+    seen.add(normalized);
+    labels.add(label);
+  }
+  return (label: labels.join(', '), removableIndexes: removableIndexes);
+}
+
+void _markRepeatedActionRowDescendantsForRemoval(
   List<SnapshotNode> nodes,
   Set<int> removed,
 ) {
-  final seenByParent = <String, SnapshotNode>{};
   for (final node in nodes) {
-    if (removed.contains(node.index) ||
-        !_isEmailLikeLabel(displayNodeLabel(node))) {
-      continue;
+    if (removed.contains(node.index) || !_isActionRowParent(node)) continue;
+
+    final parentLabel = _normalizeStructuralNodeLabel(_visibleNodeLabel(node));
+    if (parentLabel == null) continue;
+
+    final repeatedDescendants = _collectDescendants(nodes, node.index)
+        .where(
+          (descendant) =>
+              !removed.contains(descendant.index) &&
+              _isRepeatedActionRowDescendant(node, descendant, parentLabel),
+        )
+        .toList();
+
+    for (final descendant in repeatedDescendants.where(_isPassiveRowContent)) {
+      _markNodeAndDescendantsForRemoval(nodes, descendant.index, removed);
     }
-    final parentKey = node.parentIndex != null
-        ? node.parentIndex.toString()
-        : 'root';
-    final signature =
-        '$parentKey|${displayNodeLabel(node).trim().toLowerCase()}';
-    final previous = seenByParent[signature];
-    if (previous == null) {
-      seenByParent[signature] = node;
-      continue;
-    }
-    if (_areSameVisualRow(previous.rect, node.rect)) {
-      _markNodeAndDescendantsForRemoval(nodes, node.index, removed);
+
+    final repeatedControls = repeatedDescendants
+        .where((descendant) => !_isPassiveRowContent(descendant))
+        .toList();
+    final repeatedControlLabels = repeatedControls
+        .map((descendant) => _normalizeStructuralNodeLabel(_visibleNodeLabel(descendant)))
+        .where((label) => label != null)
+        .toSet();
+    if (repeatedControls.length < 2 || repeatedControlLabels.length < 2) continue;
+
+    for (final descendant in repeatedControls) {
+      _markNodeAndDescendantsForRemoval(nodes, descendant.index, removed);
     }
   }
 }
@@ -171,7 +299,7 @@ void _markAdjacentDuplicateStructuralNodesForRemoval(
     if (removed.contains(node.index) || !_isStructuralNoiseCandidate(node)) {
       continue;
     }
-    final label = _normalizeStructuralNodeLabel(displayNodeLabel(node));
+    final label = _normalizeStructuralNodeLabel(_visibleNodeLabel(node));
     if (label == null) continue;
 
     // RN can expose the same visible row content through parallel typed siblings
@@ -200,7 +328,8 @@ bool _shouldCollapseAdjacentStructuralDuplicate(
 ) {
   return !removed.contains(previous.index) &&
       _areSameVisualRow(previous.rect, node.rect) &&
-      _areStructurallyAdjacentForCollapse(previous, node);
+      (_areStructurallyAdjacent(previous, node) ||
+          _isPassiveChildOfActionableDuplicate(previous, node));
 }
 
 SnapshotNode _collapseAdjacentStructuralDuplicate(
@@ -212,54 +341,16 @@ SnapshotNode _collapseAdjacentStructuralDuplicate(
 ) {
   final survivor = _chooseStructuralRepresentative(previous, node);
   final collapsed = survivor.index == previous.index ? node : previous;
-  final collapsedHint = _imagePresentationHint(collapsed);
-  final collapsedNode = replacements[collapsed.index] ?? collapsed;
-  final hints = [
-    ..._readPresentationHints(collapsedNode),
-    if (collapsedHint != null) ...[collapsedHint],
-  ];
-  _addPresentationHints(replacements, survivor, hints);
-  _markNodeAndDescendantsForRemoval(nodes, collapsed.index, removed);
-  return replacements[survivor.index] ?? survivor;
-}
-
-void _markNodeAndDescendantsForRemoval(
-  List<SnapshotNode> nodes,
-  int rootIndex,
-  Set<int> removed,
-) {
-  removed.add(rootIndex);
-  _markDescendantsForRemoval(nodes, rootIndex, removed);
-}
-
-void _markDescendantsForRemoval(
-  List<SnapshotNode> nodes,
-  int rootIndex,
-  Set<int> removed,
-) {
-  final pending = [rootIndex];
-  while (pending.isNotEmpty) {
-    final current = pending.removeLast();
-    for (final node in nodes) {
-      if (node.parentIndex != current || removed.contains(node.index)) continue;
-      removed.add(node.index);
-      pending.add(node.index);
-    }
-  }
-}
-
-void _addPresentationHints(
-  Map<int, SnapshotNode> replacements,
-  SnapshotNode node,
-  List<String> hints,
-) {
-  final existing = replacements[node.index] ?? node;
-  final existingHints = _readPresentationHints(existing);
-  final merged = {
-    ...existingHints,
-    ...hints.where((h) => h.isNotEmpty),
-  }.toList();
-  replacements[node.index] = SnapshotNode(
+  final collapsedHint = (collapsed.type ?? '').toLowerCase().contains('image') ? 'has image' : null;
+  final existing = replacements[survivor.index] ?? survivor;
+  final collapsedHints =
+      (replacements[collapsed.index] ?? collapsed).presentationHints;
+  final mergedHints = _mergePresentationHints(
+    existing.presentationHints,
+    collapsedHints,
+    collapsedHint,
+  );
+  replacements[survivor.index] = SnapshotNode(
     index: existing.index,
     ref: existing.ref,
     type: existing.type,
@@ -281,118 +372,109 @@ void _addPresentationHints(
     surface: existing.surface,
     hiddenContentAbove: existing.hiddenContentAbove,
     hiddenContentBelow: existing.hiddenContentBelow,
-  )..presentationHints = merged;
+  )..presentationHints = mergedHints.isEmpty ? null : mergedHints;
+  _markNodeAndDescendantsForRemoval(nodes, collapsed.index, removed);
+  return replacements[survivor.index] ?? survivor;
 }
 
-List<String> _readPresentationHints(SnapshotNode node) {
-  return node.presentationHints ?? [];
+List<String> _mergePresentationHints(
+  List<String>? current,
+  List<String>? collapsed,
+  String? extra,
+) {
+  final result = <String>{
+    ...?current,
+    ...?collapsed,
+    ?extra,
+  };
+  return result.toList();
 }
+
+void _markNodeAndDescendantsForRemoval(
+  List<SnapshotNode> nodes,
+  int rootIndex,
+  Set<int> removed,
+) {
+  final pending = [rootIndex];
+  while (pending.isNotEmpty) {
+    final current = pending.removeLast();
+    if (removed.contains(current)) continue;
+    removed.add(current);
+    for (final node in nodes) {
+      if (node.parentIndex != current || removed.contains(node.index)) continue;
+      pending.add(node.index);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Geometry utilities
+// ---------------------------------------------------------------------------
 
 bool _hasRenderableArea(Rect rect) {
   return rect.width > 0 && rect.height > 0;
 }
 
+bool _isRectContainedBy(Rect? rect, Rect? container) {
+  if (rect == null || container == null) return false;
+  const tolerance = 2.0;
+  return rect.x >= container.x - tolerance &&
+      rect.y >= container.y - tolerance &&
+      rect.x + rect.width <= container.x + container.width + tolerance &&
+      rect.y + rect.height <= container.y + container.height + tolerance;
+}
+
+bool _areSameVisualRow(Rect? left, Rect? right) {
+  if (left == null || right == null) return true;
+  final leftCenterY = left.y + left.height / 2;
+  final rightCenterY = right.y + right.height / 2;
+  return (leftCenterY - rightCenterY).abs() <=
+      [left.height, right.height, 1.0].reduce((a, b) => a > b ? a : b);
+}
+
+// ---------------------------------------------------------------------------
+// Label utilities
+// ---------------------------------------------------------------------------
+
+/// Returns the visible label for a node, suppressing generic resource IDs
+/// for layout-like types.
+String _visibleNodeLabel(SnapshotNode node) {
+  final label = displayNodeLabel(node);
+  if (label.isEmpty || label != (node.identifier?.trim() ?? '')) {
+    return label;
+  }
+  if (!_isGenericResourceId(label)) {
+    return label;
+  }
+  final type = (node.type ?? '').toLowerCase();
+  if (type.contains('view') ||
+      type.contains('layout') ||
+      type.contains('image') ||
+      type.contains('list') ||
+      type.contains('recyclerview') ||
+      type.contains('collection')) {
+    return '';
+  }
+  return label;
+}
+
+String? _normalizeStructuralNodeLabel(String label) {
+  final normalized = label.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
+  if (normalized.isEmpty) return null;
+  if (RegExp(r'^(true|false|\d+)$').hasMatch(normalized)) return null;
+  return normalized;
+}
+
+bool _isGenericResourceId(String value) {
+  return RegExp(r'^[\w.]+:id\/[\w.-]+$', caseSensitive: false).hasMatch(value);
+}
+
+// ---------------------------------------------------------------------------
+// Predicates
+// ---------------------------------------------------------------------------
+
 bool _isRootNode(SnapshotNode node) {
   return node.parentIndex == null;
-}
-
-Rect? _resolveLikelyViewport(List<SnapshotNode> nodes) {
-  Rect? best;
-  var bestArea = 0.0;
-  for (final node in nodes) {
-    if (node.rect == null || !_hasRenderableArea(node.rect!)) continue;
-    final area = node.rect!.width * node.rect!.height;
-    if (area > bestArea) {
-      best = node.rect;
-      bestArea = area;
-    }
-  }
-  return best;
-}
-
-SnapshotNode? _findBottomEditableNode(List<SnapshotNode> nodes) {
-  final viewport = _resolveLikelyViewport(nodes);
-  final lowerBound = viewport != null
-      ? viewport.y + viewport.height * 0.65
-      : double.negativeInfinity;
-  return nodes.firstWhereOrNull((node) {
-    if (node.rect == null || node.rect!.y < lowerBound) return false;
-    return _isEditableNode(node);
-  });
-}
-
-List<SnapshotNode> _findBottomNavigationLikeNodes(
-  List<SnapshotNode> nodes,
-  Rect composerRect,
-) {
-  final rows = <String, List<SnapshotNode>>{};
-  for (final node in nodes) {
-    if (!_isBottomNavigationCandidate(node, nodes, composerRect)) continue;
-    final rect = node.rect!;
-    final parentKey = node.parentIndex != null
-        ? node.parentIndex.toString()
-        : 'root';
-    final rowKey = [
-      parentKey,
-      _bucket(rect.y + rect.height / 2, 24),
-      _bucket(rect.width, 24),
-      _bucket(rect.height, 24),
-    ].join('|');
-    rows.putIfAbsent(rowKey, () => []).add(node);
-  }
-
-  final navigationNodes = <SnapshotNode>[];
-  for (final row in rows.values) {
-    if (!_isBottomNavigationRow(row, nodes, composerRect)) continue;
-    navigationNodes.addAll(row);
-  }
-  return navigationNodes;
-}
-
-bool _isNearComposerVerticalBand(Rect rect, Rect composerRect) {
-  final tolerance = (composerRect.height * 2).clamp(96, double.infinity);
-  return rect.y <= composerRect.y + composerRect.height + tolerance &&
-      rect.y + rect.height >= composerRect.y - tolerance;
-}
-
-bool _isBottomNavigationCandidate(
-  SnapshotNode node,
-  List<SnapshotNode> nodes,
-  Rect composerRect,
-) {
-  if (node.rect == null ||
-      !_hasRenderableArea(node.rect!) ||
-      _isRootNode(node) ||
-      _isEditableNode(node) ||
-      _isTextOnlyNode(node) ||
-      !_isNearComposerVerticalBand(node.rect!, composerRect)) {
-    return false;
-  }
-  return _normalizeRepeatedNodeLabel(_getNodeOrDescendantLabel(node, nodes)) !=
-      null;
-}
-
-bool _isBottomNavigationRow(
-  List<SnapshotNode> row,
-  List<SnapshotNode> nodes,
-  Rect composerRect,
-) {
-  if (row.length < 3) return false;
-  final labels = <String>{};
-  for (final node in row) {
-    final label = _normalizeRepeatedNodeLabel(
-      _getNodeOrDescendantLabel(node, nodes),
-    );
-    if (label != null) labels.add(label);
-  }
-  if (labels.length < 3) return false;
-
-  final sorted = [...row]
-    ..sort((left, right) => (left.rect?.x ?? 0).compareTo(right.rect?.x ?? 0));
-  final first = sorted.first.rect!;
-  final last = sorted.last.rect!;
-  final horizontalSpan = last.x + last.width - first.x;
-  return horizontalSpan >= composerRect.width;
 }
 
 bool _isEditableNode(SnapshotNode node) {
@@ -403,9 +485,11 @@ bool _isEditableNode(SnapshotNode node) {
       identifier == 'composer';
 }
 
-bool _isTextOnlyNode(SnapshotNode node) {
+bool _isScrollableNode(SnapshotNode node) {
   final type = (node.type ?? '').toLowerCase();
-  return type.contains('textview') || type == 'text';
+  return type.contains('scroll') ||
+      type.contains('list') ||
+      type.contains('recyclerview');
 }
 
 bool _isStructuralNoiseCandidate(SnapshotNode node) {
@@ -418,6 +502,78 @@ bool _isStructuralNoiseCandidate(SnapshotNode node) {
   final type = (node.type ?? '').toLowerCase();
   return type == 'text' || _hasAnyTypeToken(type, _structuralNoiseTypeTokens);
 }
+
+bool _isUnlabeledActionRow(SnapshotNode node) {
+  return node.hittable == true &&
+      !_isEditableNode(node) &&
+      node.rect != null &&
+      _hasRenderableArea(node.rect!) &&
+      _visibleNodeLabel(node).trim().isEmpty;
+}
+
+bool _isActionRowParent(SnapshotNode node) {
+  return node.hittable == true &&
+      !_isEditableNode(node) &&
+      node.rect != null &&
+      _hasRenderableArea(node.rect!) &&
+      _normalizeStructuralNodeLabel(_visibleNodeLabel(node)) != null;
+}
+
+bool _isPassiveRowContent(SnapshotNode node) {
+  if (node.hittable == true || _isEditableNode(node)) return false;
+  final type = (node.type ?? '').toLowerCase();
+  return type.contains('text') || type.contains('image') || type.contains('icon');
+}
+
+bool _isRepeatedActionRowDescendant(
+  SnapshotNode parent,
+  SnapshotNode node,
+  String parentLabel,
+) {
+  if (!_isStructuralNoiseCandidate(node) ||
+      !_isRectContainedBy(node.rect, parent.rect)) {
+    return false;
+  }
+  final label = _normalizeStructuralNodeLabel(_visibleNodeLabel(node));
+  return label != null && label != parentLabel && parentLabel.contains(label);
+}
+
+// ---------------------------------------------------------------------------
+// Tree utilities
+// ---------------------------------------------------------------------------
+
+SnapshotNode? _findAncestor(
+  SnapshotNode node,
+  Map<int, SnapshotNode> nodeIndex,
+  bool Function(SnapshotNode) predicate,
+) {
+  var current = node;
+  while (current.parentIndex != null) {
+    final parent = nodeIndex[current.parentIndex];
+    if (parent == null) return null;
+    if (predicate(parent)) return parent;
+    current = parent;
+  }
+  return null;
+}
+
+List<SnapshotNode> _collectDescendants(List<SnapshotNode> nodes, int rootIndex) {
+  final descendants = <SnapshotNode>[];
+  final pending = [rootIndex];
+  while (pending.isNotEmpty) {
+    final current = pending.removeLast();
+    for (final node in nodes) {
+      if (node.parentIndex != current) continue;
+      descendants.add(node);
+      pending.add(node.index);
+    }
+  }
+  return descendants;
+}
+
+// ---------------------------------------------------------------------------
+// Structural representative selection
+// ---------------------------------------------------------------------------
 
 SnapshotNode _chooseStructuralRepresentative(
   SnapshotNode left,
@@ -449,20 +605,6 @@ bool _hasAnyTypeToken(String type, List<String> tokens) {
   return tokens.any((token) => type.contains(token));
 }
 
-String? _imagePresentationHint(SnapshotNode node) {
-  return (node.type ?? '').toLowerCase().contains('image') ? 'has image' : null;
-}
-
-bool _areStructurallyAdjacentForCollapse(
-  SnapshotNode left,
-  SnapshotNode right,
-) {
-  if (_areStructurallyAdjacent(left, right)) {
-    return true;
-  }
-  return _isPassiveChildOfActionableDuplicate(left, right);
-}
-
 bool _isPassiveChildOfActionableDuplicate(
   SnapshotNode left,
   SnapshotNode right,
@@ -481,51 +623,6 @@ bool _isPassiveChildOfActionableDuplicate(
   return _chooseStructuralRepresentative(parent, child).index == parent.index;
 }
 
-String? _normalizeStructuralNodeLabel(String label) {
-  final normalized = label.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
-  if (normalized.isEmpty) return null;
-  if (RegExp(r'^(true|false|\d+)$').hasMatch(normalized)) return null;
-  return normalized;
-}
-
-String _getNodeOrDescendantLabel(SnapshotNode node, List<SnapshotNode> nodes) {
-  final label = displayNodeLabel(node);
-  if (label.trim().isNotEmpty) return label;
-  final pending = [node.index];
-  while (pending.isNotEmpty) {
-    final current = pending.removeLast();
-    for (final child in nodes) {
-      if (child.parentIndex != current) continue;
-      final childLabel = displayNodeLabel(child);
-      if (childLabel.trim().isNotEmpty) return childLabel;
-      pending.add(child.index);
-    }
-  }
-  return '';
-}
-
-String? _normalizeRepeatedNodeLabel(String label) {
-  final normalized = label.trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
-  if (normalized.isEmpty || _isEmailLikeLabel(normalized)) return null;
-  return normalized;
-}
-
-int _bucket(double value, int size) {
-  return (value / size).round();
-}
-
-bool _isEmailLikeLabel(String label) {
-  return RegExp(r'\S+@\S+\.\S+').hasMatch(label);
-}
-
-bool _areSameVisualRow(Rect? left, Rect? right) {
-  if (left == null || right == null) return true;
-  final leftCenterY = left.y + left.height / 2;
-  final rightCenterY = right.y + right.height / 2;
-  return (leftCenterY - rightCenterY).abs() <=
-      [left.height, right.height, 1].reduce((a, b) => a > b ? a : b);
-}
-
 bool _areStructurallyAdjacent(SnapshotNode left, SnapshotNode right) {
   if (left.parentIndex == right.parentIndex) {
     return (left.index - right.index).abs() <= 3;
@@ -537,11 +634,3 @@ bool _areStructurallyAdjacent(SnapshotNode left, SnapshotNode right) {
       (left.index - right.index).abs() <= 2;
 }
 
-extension on List<SnapshotNode> {
-  SnapshotNode? firstWhereOrNull(bool Function(SnapshotNode) test) {
-    for (final item in this) {
-      if (test(item)) return item;
-    }
-    return null;
-  }
-}
