@@ -143,9 +143,11 @@ void main() {
         FixtureIds.stateBatchCountText,
         'Batch count: 3',
       );
-      // Load recommendations BEFORE showing snackbar — on small CI
-      // viewports the snackbar overlay covers the bottom buttons and
-      // intercepts taps.
+      // Scroll down to reveal the bottom buttons — on CI's 402x874
+      // viewport the Load Recommendations button is below the fold.
+      // Without scrolling, the direct selector tap hits off-screen
+      // coordinates and lands on the nav bar back button instead.
+      await swipeUp(device, startY: 600, endY: 300);
       await tapId(device, FixtureIds.stateLoadRecommendationsButton);
       await expectVisibleId(
         device,
