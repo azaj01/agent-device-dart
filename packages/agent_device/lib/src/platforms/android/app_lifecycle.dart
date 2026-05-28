@@ -29,6 +29,15 @@ const String _androidAppsDiscoveryHint =
     'Run agent-device apps --platform android to discover the installed package name, then retry open with that exact package.';
 const String _androidAmbiguousAppHint =
     'Run agent-device apps --platform android to see the exact installed package names before retrying open.';
+// Dart's Uri.parse strips brackets from IPv6 literals, so uri.host for
+// 'http://[::1]:8081' is '::1' (no brackets). The upstream TS set also
+// included '[::1]' because JS URL.hostname behaves similarly, but in Dart
+// only the unbracketed form is needed.
+const Set<String> _androidLocalhostHostnames = {
+  'localhost',
+  '127.0.0.1',
+  '::1',
+};
 
 final Map<String, ({String type, String value})> _aliases = {
   'settings': (type: 'intent', value: 'android.settings.SETTINGS'),
@@ -317,6 +326,65 @@ Future<AndroidForegroundApp?> _readAndroidFocus(
   return null;
 }
 
+/// Extract a `tcp:<port>` endpoint if [target] is a localhost URL with a port.
+///
+/// Returns `tcp:<port>` when [target] parses as a URL whose host is one of the
+/// localhost aliases (`localhost`, `127.0.0.1`, `::1`, `[::1]`) **and** an
+/// explicit port is present. Returns `null` for non-localhost hosts, localhost
+/// URLs without a port, and unparseable strings.
+///
+/// Exposed for unit testing.
+String? androidLocalhostReverseEndpoint(String target) {
+  Uri uri;
+  try {
+    uri = Uri.parse(target);
+  } catch (_) {
+    return null;
+  }
+
+  if (!uri.hasScheme || uri.host.isEmpty) return null;
+
+  final hostname = uri.host.toLowerCase();
+  if (!_androidLocalhostHostnames.contains(hostname)) return null;
+  if (!uri.hasPort || uri.port == 0) return null;
+  return 'tcp:${uri.port}';
+}
+
+/// Run `adb reverse tcp:<port> tcp:<port>` when [target] is a localhost URL.
+///
+/// No-ops for non-localhost URLs or URLs without an explicit port.
+/// Throws [AppError] with `COMMAND_FAILED` if the reverse fails.
+Future<void> _ensureAndroidLocalhostReverse(
+  String deviceId,
+  String target,
+) async {
+  final endpoint = androidLocalhostReverseEndpoint(target);
+  if (endpoint == null) return;
+
+  try {
+    await runCmd('adb', adbArgs(deviceId, ['reverse', endpoint, endpoint]));
+  } catch (error) {
+    final details = <String, Object?>{
+      'localPort': endpoint.replaceFirst('tcp:', ''),
+      'operation': 'adb reverse $endpoint $endpoint',
+    };
+    if (error is AppError) {
+      final hint = error.details?['hint'];
+      final diagnosticId = error.details?['diagnosticId'];
+      final logPath = error.details?['logPath'];
+      if (hint != null) details['hint'] = hint;
+      if (diagnosticId != null) details['diagnosticId'] = diagnosticId;
+      if (logPath != null) details['logPath'] = logPath;
+    }
+    throw AppError(
+      AppErrorCodes.commandFailed,
+      'Failed to ensure Android port reverse $endpoint before opening localhost URL',
+      details: details,
+      cause: error,
+    );
+  }
+}
+
 /// Open an app or deep link on the device.
 ///
 /// Handles deep link URLs, intent aliases, and package names. For package
@@ -338,6 +406,7 @@ Future<void> openAndroidApp(
         'Activity override is not supported when opening a deep link URL',
       );
     }
+    await _ensureAndroidLocalhostReverse(deviceId, deepLinkTarget);
     await runCmd(
       'adb',
       adbArgs(deviceId, [

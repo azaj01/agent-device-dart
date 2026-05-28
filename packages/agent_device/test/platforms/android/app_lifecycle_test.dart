@@ -3,6 +3,54 @@ import 'package:test/test.dart';
 
 void main() {
   group('app_lifecycle', () {
+    group('androidLocalhostReverseEndpoint', () {
+      test('returns tcp endpoint for 127.0.0.1 with port', () {
+        expect(
+          androidLocalhostReverseEndpoint('exp://127.0.0.1:8083'),
+          equals('tcp:8083'),
+        );
+      });
+
+      test('returns tcp endpoint for localhost with port', () {
+        expect(
+          androidLocalhostReverseEndpoint('http://localhost:8081'),
+          equals('tcp:8081'),
+        );
+      });
+
+      test('returns tcp endpoint for IPv6 ::1 with port', () {
+        expect(
+          androidLocalhostReverseEndpoint('http://[::1]:8081/status'),
+          equals('tcp:8081'),
+        );
+      });
+
+      test('returns null for localhost URL without explicit port', () {
+        expect(
+          androidLocalhostReverseEndpoint('http://localhost/path'),
+          isNull,
+        );
+      });
+
+      test('returns null for non-localhost URL with port', () {
+        expect(
+          androidLocalhostReverseEndpoint('https://example.com:8083/path'),
+          isNull,
+        );
+      });
+
+      test('returns null for unparseable string', () {
+        expect(androidLocalhostReverseEndpoint('not-a-url'), isNull);
+      });
+
+      test('returns tcp endpoint for non-http scheme with localhost and port', () {
+        expect(
+          androidLocalhostReverseEndpoint('exp://127.0.0.1:3000'),
+          equals('tcp:3000'),
+        );
+      });
+    });
+
     group('inferAndroidAppName', () {
       test('extracts non-generic tokens from package name', () {
         expect(inferAndroidAppName('com.example.myapp'), equals('Myapp'));
