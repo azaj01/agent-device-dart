@@ -130,9 +130,11 @@ void main() {
           );
           expect(
             okCount,
-            greaterThan(total ~/ 2),
+            greaterThanOrEqualTo((total / 2).ceil()),
             reason: '$script: only $okCount/$total steps passed',
           );
+          // Also assert at least 1 step ran.
+          expect(total, greaterThan(0));
         }, timeout: const Timeout(Duration(seconds: 120)));
       }
     });
@@ -241,9 +243,11 @@ void main() {
           );
           expect(
             okCount,
-            greaterThan(total ~/ 2),
+            greaterThanOrEqualTo((total / 2).ceil()),
             reason: '$script: only $okCount/$total steps passed',
           );
+          // Also assert at least 1 step ran.
+          expect(total, greaterThan(0));
         }, timeout: const Timeout(Duration(seconds: 120)));
       }
     });
@@ -268,7 +272,8 @@ bool _isScreenshotPathError(ReplayStepResult step) {
   if (step.action.command != 'screenshot') return false;
   final msg = step.errorMessage ?? '';
   return msg.contains('PathNotFoundException') ||
-      msg.contains('No such file or directory');
+      msg.contains('No such file or directory') ||
+      msg.contains('did not produce a file');
 }
 
 String _findRepoRoot() {

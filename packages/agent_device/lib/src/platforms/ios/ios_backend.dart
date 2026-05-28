@@ -338,6 +338,49 @@ class IosBackend extends Backend {
   }
 
   @override
+  Future<BackendActionResult> scroll(
+    BackendCommandContext ctx,
+    BackendScrollTarget target,
+    BackendScrollOptions options,
+  ) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    final direction = options.direction;
+    final amount = options.amount?.toDouble() ?? 1.0;
+    // Compute swipe coords from direction + amount, using a default
+    // viewport center and a travel distance proportional to amount.
+    const centerX = 200.0;
+    const centerY = 400.0;
+    const travelPerUnit = 200.0;
+    final travel = amount * travelPerUnit;
+    double x1 = centerX, y1 = centerY, x2 = centerX, y2 = centerY;
+    switch (direction) {
+      case 'up':
+        y1 = centerY + travel / 2;
+        y2 = centerY - travel / 2;
+      case 'down':
+        y1 = centerY - travel / 2;
+        y2 = centerY + travel / 2;
+      case 'left':
+        x1 = centerX + travel / 2;
+        x2 = centerX - travel / 2;
+      case 'right':
+        x1 = centerX - travel / 2;
+        x2 = centerX + travel / 2;
+    }
+    await _sendOrThrow(session, {
+      'command': 'drag',
+      'x': x1,
+      'y': y1,
+      'x2': x2,
+      'y2': y2,
+      'appBundleId': ?bundleId,
+      'durationMs': 250,
+    });
+    return null;
+  }
+
+  @override
   Future<BackendActionResult> pan(
     BackendCommandContext ctx,
     BackendPanOptions options,
