@@ -44,7 +44,7 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `4f4bf7b0` | perf: cache successful device readiness checks (#465) | n/a | — | Daemon cache |
 | `8301f824` | perf: cache safe device hot paths (#463) | n/a | — | Daemon cache |
 | `999b4751` | fix: resolve security alerts (#464) | n/a | — | npm security |
-| `2c73e39b` | perf: cache app resolution (#466) | pending | — | App-resolution cache; applicable to platform layer |
+| `2c73e39b` | perf: cache app resolution (#466) | ported | `e56128f` | AppResolutionCache + Android/iOS wiring; macOS cache deferred (no macOS module); iOS scope omits variant (Dart uses plain udid, not DeviceInfo) |
 | `6c368bf7` | docs: update agent-device guidance (#467) | n/a | — | Docs |
 | `3fee9d6d` | fix: cache Android snapshot helper installs (#470) | ported | `773e6f1` | In-memory install-check cache |
 | `bbb1d363` | fix: handle iOS keyboard Done dismiss controls (#469) | ported | `694e2ad` | — |
