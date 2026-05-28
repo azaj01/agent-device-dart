@@ -445,6 +445,10 @@ class BackendSnapshotResult {
   final String? appName;
   final String? appBundleId;
 
+  /// Present when consecutive snapshots are content-identical, indicating
+  /// the previous refs are still valid.
+  final SnapshotUnchanged? unchanged;
+
   const BackendSnapshotResult({
     this.nodes,
     this.truncated,
@@ -454,6 +458,7 @@ class BackendSnapshotResult {
     this.warnings,
     this.appName,
     this.appBundleId,
+    this.unchanged,
   });
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -465,6 +470,7 @@ class BackendSnapshotResult {
     if (warnings != null) 'warnings': warnings,
     if (appName != null) 'appName': appName,
     if (appBundleId != null) 'appBundleId': appBundleId,
+    if (unchanged != null) 'unchanged': unchanged!.toJson(),
   };
 }
 

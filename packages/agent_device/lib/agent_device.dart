@@ -145,10 +145,18 @@ export 'src/snapshot/snapshot.dart'
         Point,
         Rect,
         SnapshotNode,
+        SnapshotOptions,
         SnapshotState,
+        SnapshotUnchanged,
         SnapshotVisibility,
         SnapshotVisibilityReason,
+        buildSnapshotPresentationKey,
         centerOfRect;
+export 'src/snapshot/unchanged.dart'
+    show
+        SnapshotIdentity,
+        buildUnchangedSnapshotMetadata,
+        ensureSnapshotPresentationKey;
 export 'src/utils/diagnostics.dart'
     show
         DiagnosticEvent,

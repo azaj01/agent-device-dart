@@ -43,12 +43,16 @@ class SnapshotOptions {
   final String? scope;
   final bool? raw;
 
+  /// When true, re-emit the full tree even when content is unchanged.
+  final bool? forceFull;
+
   const SnapshotOptions({
     this.interactiveOnly,
     this.compact,
     this.depth,
     this.scope,
     this.raw,
+    this.forceFull,
   });
 }
 
@@ -199,12 +203,19 @@ class SnapshotState {
   final SnapshotBackend? backend;
   final bool? comparisonSafe;
 
+  /// Stable key derived from [SnapshotOptions] that identifies the
+  /// presentation parameters (scope, depth, interactiveOnly, etc.).
+  /// Two snapshots with the same [presentationKey] were captured with
+  /// equivalent filtering, making their node lists directly comparable.
+  final String? presentationKey;
+
   const SnapshotState({
     required this.nodes,
     required this.createdAt,
     this.truncated,
     this.backend,
     this.comparisonSafe,
+    this.presentationKey,
   });
 
   /// Convert to a JSON map.
@@ -214,7 +225,54 @@ class SnapshotState {
     if (truncated != null) 'truncated': truncated,
     if (backend != null) 'backend': backend!.value,
     if (comparisonSafe != null) 'comparisonSafe': comparisonSafe,
+    if (presentationKey != null) 'presentationKey': presentationKey,
   };
+}
+
+/// Metadata emitted when consecutive snapshots are content-identical.
+/// Allows callers to skip re-parsing an unchanged tree.
+class SnapshotUnchanged {
+  /// Elapsed milliseconds between the previous and current snapshot.
+  final int ageMs;
+
+  /// Number of nodes in the (unchanged) snapshot.
+  final int nodeCount;
+
+  /// True when the snapshot was captured with interactiveOnly=true.
+  final bool? interactiveOnly;
+
+  /// Scope string if the snapshot was scoped.
+  final String? scope;
+
+  const SnapshotUnchanged({
+    required this.ageMs,
+    required this.nodeCount,
+    this.interactiveOnly,
+    this.scope,
+  });
+
+  Map<String, Object?> toJson() => {
+    'ageMs': ageMs,
+    'nodeCount': nodeCount,
+    if (interactiveOnly == true) 'interactiveOnly': true,
+    if (scope != null) 'scope': scope,
+  };
+}
+
+/// Build a stable string key from [SnapshotOptions] that identifies the
+/// presentation parameters. Two snapshots with the same key were captured
+/// with equivalent filtering and are directly comparable.
+String buildSnapshotPresentationKey(SnapshotOptions? options) {
+  final interactiveOnly = options?.interactiveOnly == true;
+  final compact = options?.compact == true;
+  final depth = options?.depth;
+  final scope = (options?.scope ?? '').trim();
+  final raw = options?.raw == true;
+  // Build a deterministic JSON-like string without needing dart:convert.
+  return '{"interactiveOnly":$interactiveOnly,"compact":$compact'
+      ',"depth":${depth ?? 'null'}'
+      ',"scope":${scope.isEmpty ? 'null' : '"$scope"'}'
+      ',"raw":$raw}';
 }
 
 /// Reason why snapshot visibility is partial.

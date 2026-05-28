@@ -12,6 +12,7 @@ import 'package:agent_device/src/commands/interaction_targeting.dart';
 import 'package:agent_device/src/platforms/platform_selector.dart';
 import 'package:agent_device/src/selectors/selectors.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
+import 'package:agent_device/src/snapshot/unchanged.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/png.dart' as png;
 
@@ -167,14 +168,32 @@ class AgentDevice {
   // =========================================================================
 
   /// Capture a snapshot of the current screen.
+  ///
+  /// When [forceFull] is true the full tree is always returned even when
+  /// the content is identical to the previous snapshot. Set [raw] to true
+  /// to bypass all presentation filtering and unchanged detection.
   Future<BackendSnapshotResult> snapshot({
     bool? interactiveOnly,
     bool? compact,
     int? depth,
     String? scope,
     bool? raw,
+    bool? forceFull,
   }) async {
-    return backend.captureSnapshot(
+    final options = SnapshotOptions(
+      interactiveOnly: interactiveOnly,
+      compact: compact,
+      depth: depth,
+      scope: scope,
+      raw: raw,
+      forceFull: forceFull,
+    );
+
+    // Read previous session state before capturing.
+    final previousSession = await sessions.get(sessionName);
+    final previousSnapshot = previousSession?.snapshot;
+
+    final result = await backend.captureSnapshot(
       await _ctx(),
       BackendSnapshotOptions(
         interactiveOnly: interactiveOnly,
@@ -183,6 +202,56 @@ class AgentDevice {
         scope: scope,
         raw: raw,
       ),
+    );
+
+    // Build a SnapshotState for the current capture and attach a
+    // presentation key so consecutive snapshots can be compared.
+    final rawNodes = result.nodes;
+    final nodes = rawNodes == null
+        ? <SnapshotNode>[]
+        : rawNodes.whereType<SnapshotNode>().toList();
+    final currentSnapshot = ensureSnapshotPresentationKey(
+      SnapshotState(
+        nodes: nodes,
+        createdAt: clock.now(),
+        truncated: result.truncated,
+        backend: result.backend != null
+            ? _tryParseSnapshotBackend(result.backend!)
+            : null,
+        comparisonSafe: null,
+      ),
+      options,
+    );
+
+    // Detect unchanged presentation.
+    final unchanged = buildUnchangedSnapshotMetadata(
+      previous: previousSnapshot,
+      current: currentSnapshot,
+      options: options,
+      identity: SnapshotIdentity(
+        previousAppBundleId: previousSession?.appBundleId,
+        currentAppBundleId: result.appBundleId ?? previousSession?.appBundleId,
+      ),
+    );
+
+    // Persist the new snapshot state to the session.
+    await _updateSession(
+      appName: result.appName,
+      appBundleId: result.appBundleId,
+      snapshot: currentSnapshot,
+    );
+
+    if (unchanged == null) return result;
+    return BackendSnapshotResult(
+      nodes: result.nodes,
+      truncated: result.truncated,
+      backend: result.backend,
+      snapshot: result.snapshot,
+      analysis: result.analysis,
+      warnings: result.warnings,
+      appName: result.appName,
+      appBundleId: result.appBundleId,
+      unchanged: unchanged,
     );
   }
 
@@ -999,6 +1068,16 @@ class AgentDevice {
       }
     }
     await sessions.delete(sessionName);
+  }
+}
+
+/// Parse a [SnapshotBackend] from a string value, returning null if the
+/// value is not recognised (forward-compat: new backends won't crash).
+SnapshotBackend? _tryParseSnapshotBackend(String value) {
+  try {
+    return SnapshotBackend.fromString(value);
+  } catch (_) {
+    return null;
   }
 }
 

@@ -46,5 +46,14 @@ Notes:
 - iOS `resolveIosDevicePerfTarget` lives in `perf.dart` (upstream puts it there too). It calls `listIosDeviceApps` + `listIosDeviceProcesses` from `devicectl.dart`.
 - `IosDeviceProcessInfo` (executable: file:// URL + pid) is defined in `devicectl.dart`.
 
+| `platforms/app-resolution-cache.ts` | `platforms/app_resolution_cache.dart` |
+| `platforms/android/app-lifecycle.ts` | `platforms/android/app_lifecycle.dart` |
+| `platforms/ios/apps.ts` (MVP subset) | `platforms/ios/app_lifecycle.dart` |
+
+**Dart iOS app_lifecycle.dart deviations from TS apps.ts:**
+- Takes `String udid` everywhere, not `DeviceInfo` struct — `AppResolutionCacheScope` variant field is omitted
+- macOS branch of `resolveIosApp` not ported (no macOS module yet)
+- `resolveIosApp` is new in this file as of commit 2c73e39b port; callers currently use bundleId directly
+
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.
