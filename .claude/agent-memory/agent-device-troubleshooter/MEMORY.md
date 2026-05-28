@@ -1,0 +1,1 @@
+- [iOS simulator environment](project_ios_simulator_env.md) — active sim UDID, runner session format, stale-session cleanup procedure

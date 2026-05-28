@@ -39,6 +39,8 @@ TS naming conventions → Dart:
 | `platforms/ios/perf-frame.ts` | `platforms/ios/perf_frame.dart` |
 | `platforms/ios/perf.ts` | `platforms/ios/perf.dart` |
 | `platforms/ios/devicectl.ts` | `platforms/ios/devicectl.dart` |
+| `platforms/android/multitouch-helper.ts` | `platforms/android/multitouch_helper.dart` |
+| `android-multitouch-helper/` (APK source) | `lib/src/native/android-multitouch-helper/` |
 
 Notes:
 - `roundOneDecimal` lives in `perf_utils.dart` (not just `perf_frame_analysis.dart`). When importing both, use `show` to avoid ambiguous-import errors.
@@ -124,6 +126,15 @@ Notes:
 - `AndroidSnapshotOptions` does NOT have `interactiveOnly`/`compact` top-level — use `snapshot: SnapshotOptions(interactiveOnly: false, compact: false)` nested
 - Sealed class `_DialogButtonTapResult` with `_DialogButtonTapOk` / `_DialogButtonTapFailed` variants; extension on sealed for field access
 - `getAndroidBlockingDialogFocus` exported from `app_lifecycle.dart` via `export 'app_parsers.dart' show AndroidBlockingDialogFocus`
+
+**Gesture dispatch pattern (47b981c8):**
+- TS dispatch goes through `Interactor` interface (daemon layer) → `createAndroidInteractor` / iOS `iosRunnerOverrides`; Dart goes directly through `Backend` subclass overrides (AndroidBackend, IosBackend)
+- Android `pan`/`fling` → `swipeAndroid` (adb input swipe); Android `pinch`/`rotateGesture`/`transformGesture` → multitouch helper APK via `adb shell am instrument`
+- iOS `pan`/`fling` → `drag` runner command; `rotateGesture` → `rotateGesture` runner command; `transformGesture` → `transformGesture` runner command
+- CLI gesture commands live in `gesture_cmds.dart` as `GestureCommand` with subcommands (not inlined into `simple_action_cmds.dart`)
+- `BackendRotateGestureOptions.centerX/centerY` (not `center: Point`) — flat fields because rotate may omit center
+- AdbProvider touch-injector override (`resolveAndroidTouchInjector`) not ported — no provider injection layer in Dart
+- `@visibleForTesting` helpers `parseAndroidMultitouchHelperManifestForTest` + `parseAndroidMultitouchHelperOutputForTest` expose internal parsers for tests
 
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.
