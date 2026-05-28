@@ -23,7 +23,7 @@ Use plain `git commit` — no `-c user.email` or `-c user.name` overrides.
 
 ## Registry location
 
-`PORTING_PLAN.md` at the repo root — section "8. Status / Changelog".
+`PORTED_COMMITS.md` at the repo root (not PORTING_PLAN.md — that's an older reference).
 Append a dated bullet `- **YYYY-MM-DD**: ...` above the `(Append dated entries below...)` sentinel.
 
 ## Test flags

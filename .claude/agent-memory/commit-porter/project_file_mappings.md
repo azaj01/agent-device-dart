@@ -78,6 +78,14 @@ Notes:
 
 | `platforms/fill-diagnostics.ts` | `platforms/fill_diagnostics.dart` |
 | `platforms/android/fill-verification.ts` | `platforms/android/fill_verification.dart` |
+| `utils/location-coordinates.ts` | `utils/location_coordinates.dart` |
+| `platforms/setting-state.ts` | `platforms/setting_state.dart` |
+
+**Location coordinates pattern (a9064254):**
+- TS `requireLocationCoordinates(options: Partial<LocationCoordinates>)` → Dart `requireLocationCoordinates(double? latitude, double? longitude)` — flat params, no options object
+- TS `PermissionSettingOptions` renamed to `SettingOptions` and gained lat/lon — not ported (type not in Dart)
+- Emulator detection uses `serial.startsWith('emulator-')` (Dart has no DeviceInfo in this call path)
+- iOS `simctl location set <lat>,<lon>` deferred — setIosSetting not yet ported to Dart
 
 **AndroidUiNodeMetadata pattern (600e9565):**
 - `readNodeAttributes` and `parseBounds` are private in TS after this refactor; the Dart port made them private too
