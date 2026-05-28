@@ -36,6 +36,24 @@ import 'package:agent_device/src/utils/exec.dart';
 import 'package:agent_device/src/utils/logger.dart';
 import 'package:path/path.dart' as p;
 
+// Hot tap loops can skip one uptime preflight only while the runner has just
+// responded. Failed mutating taps still invalidate the session instead of
+// being replayed.
+const Duration runnerTapPreflightSkipFreshness = Duration(seconds: 10);
+
+/// Returns true when [session] requires a readiness preflight (uptime probe)
+/// before executing [command]. Hot tap/tapSeries paths skip the probe when
+/// the runner responded successfully within [runnerTapPreflightSkipFreshness].
+bool shouldPreflightMutatingRunnerCommand(
+  IosRunnerSession session,
+  String command,
+) {
+  if (session.lastSuccessAt == null) return true;
+  if (command != 'tap' && command != 'tapSeries') return true;
+  return DateTime.now().difference(session.lastSuccessAt!) >
+      runnerTapPreflightSkipFreshness;
+}
+
 /// JSON envelope returned by the runner: `{ok: bool, data|error: ...}`.
 class RunnerResponse {
   final bool ok;
@@ -73,7 +91,14 @@ class IosRunnerSession {
   /// for simulator sessions (which use loopback).
   final String? tunnelIp;
 
-  const IosRunnerSession({
+  /// Timestamp of the most recent successful runner response. Used to
+  /// short-circuit the readiness preflight for hot tap sequences: if the
+  /// runner responded successfully within [runnerTapPreflightSkipFreshness],
+  /// the uptime probe can be skipped for `tap` and `tapSeries` commands.
+  /// Null until the first successful response.
+  DateTime? lastSuccessAt;
+
+  IosRunnerSession({
     required this.udid,
     required this.port,
     required this.xcodebuildPid,
@@ -81,6 +106,7 @@ class IosRunnerSession {
     required this.logPath,
     this.kind = IosRunnerKind.simulator,
     this.tunnelIp,
+    this.lastSuccessAt,
   });
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -91,6 +117,9 @@ class IosRunnerSession {
     'logPath': logPath,
     'kind': kind.wire,
     if (tunnelIp != null) 'tunnelIp': tunnelIp,
+    if (lastSuccessAt != null)
+      'lastSuccessfulRunnerResponseAtMs':
+          lastSuccessAt!.millisecondsSinceEpoch,
   };
 
   static IosRunnerSession? fromJson(Object? raw) {
@@ -107,6 +136,7 @@ class IosRunnerSession {
         log is! String) {
       return null;
     }
+    final lastSuccessMs = raw['lastSuccessfulRunnerResponseAtMs'];
     return IosRunnerSession(
       udid: udid,
       port: port,
@@ -115,6 +145,9 @@ class IosRunnerSession {
       logPath: log,
       kind: IosRunnerKind.parse(raw['kind'] as String?),
       tunnelIp: raw['tunnelIp'] as String?,
+      lastSuccessAt: lastSuccessMs is int
+          ? DateTime.fromMillisecondsSinceEpoch(lastSuccessMs)
+          : null,
     );
   }
 }
@@ -710,7 +743,9 @@ class IosRunnerClient {
     Object lastError = StateError('unreachable');
     for (var attempt = 0; attempt <= delays.length; attempt++) {
       try {
-        return await _postCommand(url, body, timeout: timeout);
+        final response = await _postCommand(url, body, timeout: timeout);
+        if (response.ok) session.lastSuccessAt = DateTime.now();
+        return response;
       } on SocketException catch (e) {
         if (!_isTransientBridgeError(e)) rethrow;
         lastError = e;

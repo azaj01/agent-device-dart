@@ -121,7 +121,7 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `896adcc6` | feat: add maestro replay compatibility (#561) | pending | — | Superseded by `a5fffc6e` |
 | `f71371eb` | fix: handle platform alerts (#562) | pending | — | Alert detection + classification for Android/iOS |
 | `b0e19c9d` | perf: improve recording and interaction flows (#563) | pending | — | Scroll-to-edge, recording perf |
-| `dfd5c712` | perf: speed up hot iOS taps (#572) | pending | — | Skip readiness preflight for hot taps |
+| `dfd5c712` | perf: speed up hot iOS taps (#572) | ported | (see note) | `lastSuccessAt` field + `shouldPreflightMutatingRunnerCommand`; Dart had no uptime preflight so the skip logic is infrastructure-only; serialized as `lastSuccessfulRunnerResponseAtMs` |
 | `67aa89af` | feat: add iOS repro evidence capabilities (#573) | pending | — | Launch console, improved log predicates |
 | `cd55a6a5` | fix: harden iOS simulator recording cleanup (#575) | pending | — | Multi-stage signal escalation for recording stop |
 | `47b981c8` | feat: add gesture command coverage (#576) | pending | — | Gesture umbrella (pan/fling/rotate/transform) + multitouch helper |
