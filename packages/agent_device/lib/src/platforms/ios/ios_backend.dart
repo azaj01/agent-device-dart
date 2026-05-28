@@ -335,6 +335,85 @@ class IosBackend extends Backend {
   }
 
   @override
+  Future<BackendActionResult> pan(
+    BackendCommandContext ctx,
+    BackendPanOptions options,
+  ) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    await _sendOrThrow(session, {
+      'command': 'drag',
+      'x': options.startX,
+      'y': options.startY,
+      'x2': options.endX,
+      'y2': options.endY,
+      'durationMs': options.durationMs ?? 500,
+      'appBundleId': ?bundleId,
+    });
+    return null;
+  }
+
+  @override
+  Future<BackendActionResult> fling(
+    BackendCommandContext ctx,
+    BackendFlingOptions options,
+  ) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    await _sendOrThrow(session, {
+      'command': 'drag',
+      'x': options.startX,
+      'y': options.startY,
+      'x2': options.endX,
+      'y2': options.endY,
+      'durationMs': options.durationMs ?? 16,
+      'appBundleId': ?bundleId,
+    });
+    return null;
+  }
+
+  @override
+  Future<BackendActionResult> rotateGesture(
+    BackendCommandContext ctx,
+    BackendRotateGestureOptions options,
+  ) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    // Note: the runner command is 'rotateGesture' (not 'rotate') to distinguish
+    // from the device-rotation command at the runner protocol level.
+    await _sendOrThrow(session, {
+      'command': 'rotateGesture',
+      'degrees': options.degrees,
+      if (options.centerX != null) 'x': options.centerX,
+      if (options.centerY != null) 'y': options.centerY,
+      if (options.velocity != null) 'velocity': options.velocity,
+      'appBundleId': ?bundleId,
+    });
+    return null;
+  }
+
+  @override
+  Future<BackendActionResult> transformGesture(
+    BackendCommandContext ctx,
+    BackendTransformGestureOptions options,
+  ) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    await _sendOrThrow(session, {
+      'command': 'transformGesture',
+      'x': options.x,
+      'y': options.y,
+      'dx': options.dx,
+      'dy': options.dy,
+      'scale': options.scale,
+      'degrees': options.degrees,
+      if (options.durationMs != null) 'durationMs': options.durationMs,
+      'appBundleId': ?bundleId,
+    });
+    return null;
+  }
+
+  @override
   Future<BackendActionResult> typeText(
     BackendCommandContext ctx,
     String text, [

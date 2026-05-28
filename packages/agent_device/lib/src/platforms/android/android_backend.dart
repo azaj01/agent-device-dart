@@ -16,6 +16,7 @@ import 'package:path/path.dart' as p;
 import 'adb.dart';
 import 'alert.dart';
 import 'app_lifecycle.dart';
+import 'multitouch_helper.dart';
 import 'device_input_state.dart';
 import 'devices.dart';
 import 'input_actions.dart';
@@ -298,6 +299,100 @@ class AndroidBackend extends Backend {
     });
     if (warning != null) return <String, Object?>{'warning': warning};
     return null;
+  }
+
+  @override
+  Future<BackendActionResult> pan(
+    BackendCommandContext ctx,
+    BackendPanOptions options,
+  ) async {
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'pan', () async {
+      await swipeAndroid(
+        serial,
+        options.startX.round(),
+        options.startY.round(),
+        options.endX.round(),
+        options.endY.round(),
+        options.durationMs ?? 500,
+      );
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
+    return null;
+  }
+
+  @override
+  Future<BackendActionResult> fling(
+    BackendCommandContext ctx,
+    BackendFlingOptions options,
+  ) async {
+    final serial = _serial(ctx);
+    final warning = await _withAndroidAnrGuard(ctx, 'fling', () async {
+      await swipeAndroid(
+        serial,
+        options.startX.round(),
+        options.startY.round(),
+        options.endX.round(),
+        options.endY.round(),
+        options.durationMs ?? 50,
+      );
+    });
+    if (warning != null) return <String, Object?>{'warning': warning};
+    return null;
+  }
+
+  @override
+  Future<BackendActionResult> pinch(
+    BackendCommandContext ctx,
+    BackendPinchOptions options,
+  ) async {
+    final serial = _serial(ctx);
+    return pinchAndroid(
+      serial,
+      AndroidPinchGestureOptions(
+        scale: options.scale,
+        x: options.center?.x,
+        y: options.center?.y,
+      ),
+    );
+  }
+
+  @override
+  Future<BackendActionResult> rotateGesture(
+    BackendCommandContext ctx,
+    BackendRotateGestureOptions options,
+  ) async {
+    final serial = _serial(ctx);
+    return rotateGestureAndroid(
+      serial,
+      AndroidRotateGestureOptions(
+        degrees: options.degrees,
+        x: options.centerX,
+        y: options.centerY,
+        velocity: options.velocity,
+        durationMs: options.durationMs,
+      ),
+    );
+  }
+
+  @override
+  Future<BackendActionResult> transformGesture(
+    BackendCommandContext ctx,
+    BackendTransformGestureOptions options,
+  ) async {
+    final serial = _serial(ctx);
+    return transformGestureAndroid(
+      serial,
+      AndroidTransformGestureOptions(
+        x: options.x,
+        y: options.y,
+        dx: options.dx,
+        dy: options.dy,
+        scale: options.scale,
+        degrees: options.degrees,
+        durationMs: options.durationMs,
+      ),
+    );
   }
 
   @override

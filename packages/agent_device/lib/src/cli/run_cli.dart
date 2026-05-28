@@ -8,6 +8,7 @@ import 'package:args/command_runner.dart';
 
 import 'commands/batch_cmd.dart';
 import 'commands/completion_cmd.dart';
+import 'commands/gesture_cmds.dart';
 import 'commands/devices_cmd.dart';
 import 'commands/install_cmd.dart';
 import 'commands/logs_cmd.dart';
@@ -82,6 +83,7 @@ CommandRunner<int> buildCliRunner({String executableName = 'agent-device'}) {
     ..addCommand(ScrollCommand())
     ..addCommand(LongPressCommand())
     ..addCommand(PinchCommand())
+    ..addCommand(GestureCommand())
     ..addCommand(SliderCommand())
     ..addCommand(AppStateCommand())
     ..addCommand(AppsCommand())

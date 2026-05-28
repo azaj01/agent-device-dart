@@ -135,6 +135,78 @@ class BackendPinchOptions {
   const BackendPinchOptions({required this.scale, this.center});
 }
 
+/// Options for pan gestures (finger drag from one point to another).
+class BackendPanOptions {
+  final double startX;
+  final double startY;
+  final double endX;
+  final double endY;
+  final int? durationMs;
+
+  const BackendPanOptions({
+    required this.startX,
+    required this.startY,
+    required this.endX,
+    required this.endY,
+    this.durationMs,
+  });
+}
+
+/// Options for fling gestures (fast swipe in a direction).
+class BackendFlingOptions {
+  final double startX;
+  final double startY;
+  final double endX;
+  final double endY;
+  final int? durationMs;
+
+  const BackendFlingOptions({
+    required this.startX,
+    required this.startY,
+    required this.endX,
+    required this.endY,
+    this.durationMs,
+  });
+}
+
+/// Options for rotate gestures (two-finger rotation).
+class BackendRotateGestureOptions {
+  final double degrees;
+  final double? centerX;
+  final double? centerY;
+  final double? velocity;
+  final int? durationMs;
+
+  const BackendRotateGestureOptions({
+    required this.degrees,
+    this.centerX,
+    this.centerY,
+    this.velocity,
+    this.durationMs,
+  });
+}
+
+/// Options for transform gestures (combined pan + scale + rotate).
+class BackendTransformGestureOptions {
+  final double x;
+  final double y;
+  final double dx;
+  final double dy;
+  final double scale;
+  final double degrees;
+  final int? durationMs;
+
+  const BackendTransformGestureOptions({
+    required this.x,
+    required this.y,
+    required this.dx,
+    required this.dy,
+    required this.scale,
+    required this.degrees,
+    this.durationMs,
+  });
+}
+
 /// Options for adjusting a slider.
 class BackendAdjustSliderOptions {
   final double? normalizedPosition;

@@ -450,6 +450,93 @@ class AgentDevice {
     );
   }
 
+  /// Pan (finger drag) from (x1, y1) by (dx, dy). The endpoint is
+  /// computed as (x1 + dx, y1 + dy). [durationMs] controls gesture speed.
+  Future<void> pan(
+    num x,
+    num y,
+    num dx,
+    num dy, {
+    int? durationMs,
+  }) async {
+    await backend.pan(
+      await _ctx(),
+      BackendPanOptions(
+        startX: x.toDouble(),
+        startY: y.toDouble(),
+        endX: (x + dx).toDouble(),
+        endY: (y + dy).toDouble(),
+        durationMs: durationMs,
+      ),
+    );
+  }
+
+  /// Fling from (startX, startY) to (endX, endY) quickly. Lower [durationMs]
+  /// produces a faster, more inertial-feeling gesture.
+  Future<void> fling(
+    num startX,
+    num startY,
+    num endX,
+    num endY, {
+    int? durationMs,
+  }) async {
+    await backend.fling(
+      await _ctx(),
+      BackendFlingOptions(
+        startX: startX.toDouble(),
+        startY: startY.toDouble(),
+        endX: endX.toDouble(),
+        endY: endY.toDouble(),
+        durationMs: durationMs,
+      ),
+    );
+  }
+
+  /// Two-finger rotate gesture by [degrees] (positive = clockwise).
+  /// [centerX]/[centerY] pin the center point; defaults to screen center.
+  Future<void> rotateGesture(
+    double degrees, {
+    double? centerX,
+    double? centerY,
+    double? velocity,
+    int? durationMs,
+  }) async {
+    await backend.rotateGesture(
+      await _ctx(),
+      BackendRotateGestureOptions(
+        degrees: degrees,
+        centerX: centerX,
+        centerY: centerY,
+        velocity: velocity,
+        durationMs: durationMs,
+      ),
+    );
+  }
+
+  /// Combined pan + scale + rotate transform gesture.
+  Future<void> transformGesture({
+    required num x,
+    required num y,
+    required num dx,
+    required num dy,
+    required double scale,
+    required double degrees,
+    int? durationMs,
+  }) async {
+    await backend.transformGesture(
+      await _ctx(),
+      BackendTransformGestureOptions(
+        x: x.toDouble(),
+        y: y.toDouble(),
+        dx: dx.toDouble(),
+        dy: dy.toDouble(),
+        scale: scale,
+        degrees: degrees,
+        durationMs: durationMs,
+      ),
+    );
+  }
+
   /// Adjust a slider. Either set to a [normalizedPosition] (0.0–1.0),
   /// or [action] `'increment'`/`'decrement'` by [steps].
   ///

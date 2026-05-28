@@ -189,6 +189,32 @@ abstract class Backend {
     BackendPinchOptions options,
   ) async => unsupported('pinch');
 
+  /// Pan (finger drag) from one point to another.
+  Future<BackendActionResult> pan(
+    BackendCommandContext ctx,
+    BackendPanOptions options,
+  ) async => unsupported('pan');
+
+  /// Fling (fast swipe) from one point towards a direction.
+  Future<BackendActionResult> fling(
+    BackendCommandContext ctx,
+    BackendFlingOptions options,
+  ) async => unsupported('fling');
+
+  /// Two-finger rotate gesture.
+  ///
+  /// Named [rotateGesture] to avoid clash with [rotate] (screen rotation).
+  Future<BackendActionResult> rotateGesture(
+    BackendCommandContext ctx,
+    BackendRotateGestureOptions options,
+  ) async => unsupported('rotateGesture');
+
+  /// Combined pan + scale + rotate transform gesture.
+  Future<BackendActionResult> transformGesture(
+    BackendCommandContext ctx,
+    BackendTransformGestureOptions options,
+  ) async => unsupported('transformGesture');
+
   /// Adjust a slider: set to a normalized position (0.0–1.0), or
   /// increment/decrement by a number of steps.
   Future<BackendActionResult> adjustSlider(
