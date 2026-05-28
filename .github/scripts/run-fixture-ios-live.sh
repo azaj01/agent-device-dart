@@ -14,6 +14,7 @@ compress_video() {
   if [[ ! -f "$raw" ]]; then return; fi
   ffmpeg -y -i "$raw" \
     -c:v libx264 -crf 22 -preset fast -profile:v main -level 4.0 \
+    -pix_fmt yuv420p \
     -vf "fps=min(30\\,source_fps)" \
     -c:a aac -b:a 128k \
     -movflags +faststart \
