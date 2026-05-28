@@ -390,15 +390,6 @@ class IosBackend extends Backend {
     BackendCommandContext ctx,
     BackendRecordingOptions? options,
   ) async {
-    final session = await _runner(ctx);
-    final bundleId = ctx.appBundleId ?? ctx.appId;
-    if (bundleId == null || bundleId.isEmpty) {
-      throw AppError(
-        AppErrorCodes.invalidArgs,
-        'iOS recording requires an open app. Run `agent-device open <bundleId>` '
-        'first so the runner knows which app to capture.',
-      );
-    }
     final outPath = options?.outPath;
     if (outPath == null || outPath.isEmpty) {
       throw AppError(
@@ -406,27 +397,67 @@ class IosBackend extends Backend {
         'iOS startRecording requires options.outPath.',
       );
     }
-    // The runner writes into its own NSTemporaryDirectory inside the
-    // simulator; only the basename of `outPath` matters over the wire.
-    // We pull the file out on stop using the runner log's
-    // `resolvedOutPath=` trace line.
+    final udid = _udid(ctx);
+    final kind = await _resolveKind(udid);
+
+    if (kind == 'simulator') {
+      return _startSimulatorRecording(udid, outPath);
+    }
+    return _startDeviceRecording(ctx, options);
+  }
+
+  Future<BackendRecordingResult> _startSimulatorRecording(
+    String udid,
+    String outPath,
+  ) async {
+    // Kill any stale simctl recordVideo process from a prior invocation.
+    final existing = await _readIosRecorder(udid);
+    if (existing != null) {
+      _signalProcess(existing.pid, ProcessSignal.sigint);
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await _deleteIosRecorder(udid);
+    }
+    // Spawn `xcrun simctl io <udid> recordVideo <outPath>` as a
+    // detached background process — matches upstream TS which uses
+    // `runCmdBackground('xcrun', ['simctl', 'io', udid, 'recordVideo', outPath])`.
+    final dst = File(outPath);
+    await dst.parent.create(recursive: true);
+    final process = await Process.start(
+      'xcrun',
+      ['simctl', 'io', udid, 'recordVideo', outPath],
+      mode: ProcessStartMode.detached,
+    );
+    await _writeIosRecorder(
+      _IosRecorderRecord(udid: udid, pid: process.pid, outPath: outPath),
+    );
+    // Brief settle window — simctl needs a moment to open the output file.
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    return BackendRecordingResult(path: outPath);
+  }
+
+  Future<BackendRecordingResult> _startDeviceRecording(
+    BackendCommandContext ctx,
+    BackendRecordingOptions? options,
+  ) async {
+    final session = await _runner(ctx);
+    final bundleId = ctx.appBundleId ?? ctx.appId;
+    if (bundleId == null || bundleId.isEmpty) {
+      throw AppError(
+        AppErrorCodes.invalidArgs,
+        'iOS device recording requires an open app. Run '
+        '`agent-device open <bundleId>` first.',
+      );
+    }
+    final outPath = options!.outPath!;
     final fileName = p.basename(outPath);
-    // ScreenRecorder.start on a physical device can take 10-20s to
-    // initialize AVAssetWriter + begin the display stream, much slower
-    // than the simulator. Give it a generous window.
-    final recordTimeout = session.kind == IosRunnerKind.device
-        ? const Duration(seconds: 90)
-        : const Duration(seconds: 30);
+    const recordTimeout = Duration(seconds: 90);
     RunnerResponse res = await IosRunnerClient.send(session, {
       'command': 'recordStart',
       'outPath': fileName,
       'appBundleId': bundleId,
-      if (options?.fps != null) 'fps': options!.fps,
-      if (options?.quality != null) 'quality': options!.quality,
+      if (options.fps != null) 'fps': options.fps,
+      if (options.quality != null) 'quality': options.quality,
     }, timeout: recordTimeout);
-    // If the runner still had a stale recording from a prior invocation,
-    // clear it with one recordStop and retry — matches TS
-    // `isRunnerRecordingAlreadyInProgressError` recovery.
     if (!res.ok &&
         (res.errorMessage ?? '').contains('recording already in progress')) {
       await IosRunnerClient.send(session, {
@@ -437,8 +468,8 @@ class IosBackend extends Backend {
         'command': 'recordStart',
         'outPath': fileName,
         'appBundleId': bundleId,
-        if (options?.fps != null) 'fps': options!.fps,
-        if (options?.quality != null) 'quality': options!.quality,
+        if (options.fps != null) 'fps': options.fps,
+        if (options.quality != null) 'quality': options.quality,
       }, timeout: recordTimeout);
     }
     if (!res.ok) {
@@ -455,8 +486,6 @@ class IosBackend extends Backend {
     BackendCommandContext ctx,
     BackendRecordingOptions? options,
   ) async {
-    final session = await _runner(ctx);
-    final bundleId = ctx.appBundleId ?? ctx.appId;
     final outPath = options?.outPath;
     if (outPath == null || outPath.isEmpty) {
       throw AppError(
@@ -465,9 +494,81 @@ class IosBackend extends Backend {
         'startRecording).',
       );
     }
-    final stopTimeout = session.kind == IosRunnerKind.device
-        ? const Duration(seconds: 60)
-        : const Duration(seconds: 30);
+    final udid = _udid(ctx);
+    final kind = await _resolveKind(udid);
+
+    if (kind == 'simulator') {
+      return _stopSimulatorRecording(udid, outPath);
+    }
+    return _stopDeviceRecording(ctx, outPath);
+  }
+
+  /// Stop a simulator recording started via `simctl io recordVideo`.
+  /// Uses multi-stage signal escalation (SIGINT → SIGTERM → SIGKILL)
+  /// matching upstream cd55a6a5.
+  Future<BackendRecordingResult> _stopSimulatorRecording(
+    String udid,
+    String outPath,
+  ) async {
+    final record = await _readIosRecorder(udid);
+    if (record == null) {
+      throw AppError(
+        AppErrorCodes.commandFailed,
+        'No iOS simulator recording in progress for $udid.',
+      );
+    }
+    // Multi-stage signal escalation: SIGINT lets simctl finalize the
+    // moov atom cleanly. Escalate to SIGTERM then SIGKILL if it doesn't
+    // exit in time.
+    bool stopped = false;
+    for (final signal in [
+      ProcessSignal.sigint,
+      ProcessSignal.sigterm,
+      ProcessSignal.sigkill,
+    ]) {
+      _signalProcess(record.pid, signal);
+      // Also try pgrep fallback for orphaned processes.
+      if (signal != ProcessSignal.sigint) {
+        await _signalMatchingSimctlRecorders(udid, signal);
+      }
+      await Future<void>.delayed(
+        signal == ProcessSignal.sigint
+            ? const Duration(seconds: 5)
+            : const Duration(seconds: 2),
+      );
+      if (!_isProcessAlive(record.pid)) {
+        stopped = true;
+        break;
+      }
+    }
+    await _deleteIosRecorder(udid);
+    if (!stopped) {
+      return BackendRecordingResult(
+        path: outPath,
+        warning: 'simctl recordVideo process ${record.pid} did not exit '
+            'after signal escalation.',
+      );
+    }
+    // Wait briefly for the file to stabilize.
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+    final file = File(outPath);
+    if (!await file.exists()) {
+      return BackendRecordingResult(
+        path: outPath,
+        warning: 'Recording file did not appear at $outPath.',
+      );
+    }
+    return BackendRecordingResult(path: outPath);
+  }
+
+  /// Stop a device recording via the runner's recordStop command.
+  Future<BackendRecordingResult> _stopDeviceRecording(
+    BackendCommandContext ctx,
+    String outPath,
+  ) async {
+    final session = await _runner(ctx);
+    final bundleId = ctx.appBundleId ?? ctx.appId;
+    const stopTimeout = Duration(seconds: 60);
     final res = await IosRunnerClient.send(session, {
       'command': 'recordStop',
       'appBundleId': ?bundleId,
@@ -478,10 +579,6 @@ class IosBackend extends Backend {
         'iOS runner recordStop failed: ${res.errorMessage ?? 'unknown'}',
       );
     }
-    // Runner logs `resolvedOutPath=<abs>` — use the most recent match
-    // for this session's log to locate the MP4. On simulator that path
-    // is directly readable on the host FS; on device we pull it out via
-    // `xcrun devicectl device copy from --domain-type appDataContainer`.
     final resolved = await _findLatestResolvedRecordingPath(session.logPath);
     if (resolved == null) {
       return BackendRecordingResult(
@@ -494,63 +591,43 @@ class IosBackend extends Backend {
     final dst = File(outPath);
     await dst.parent.create(recursive: true);
 
-    if (session.kind == IosRunnerKind.device) {
-      // On device `resolved` is an on-device absolute path inside the
-      // runner's sandbox (`/private/var/mobile/.../tmp/<file>.mp4`).
-      // The app-data-container-relative form is `tmp/<basename>`. The
-      // xctrunner bundle owns the UITest process's NSTemporaryDirectory
-      // so we try it first, then fall back to the main app bundle.
-      final remotePath = 'tmp/${p.basename(resolved)}';
-      final bundles = _iosRunnerContainerBundleIds();
-      int? lastExit;
-      String lastStderr = '';
-      String lastBundle = '';
-      for (final bundleCandidate in bundles) {
-        final pull = await runCmd('xcrun', [
-          'devicectl',
-          'device',
-          'copy',
-          'from',
-          '--device',
-          _udid(ctx),
-          '--source',
-          remotePath,
-          '--destination',
-          outPath,
-          '--domain-type',
-          'appDataContainer',
-          '--domain-identifier',
-          bundleCandidate,
-        ], const ExecOptions(allowFailure: true, timeoutMs: 60000));
-        if (pull.exitCode == 0) {
-          return BackendRecordingResult(path: outPath);
-        }
-        lastExit = pull.exitCode;
-        lastStderr = pull.stderr.trim();
-        lastBundle = bundleCandidate;
+    // On device: pull the file from the runner's sandbox via devicectl.
+    final remotePath = 'tmp/${p.basename(resolved)}';
+    final bundles = _iosRunnerContainerBundleIds();
+    int? lastExit;
+    String lastStderr = '';
+    String lastBundle = '';
+    for (final bundleCandidate in bundles) {
+      final pull = await runCmd('xcrun', [
+        'devicectl',
+        'device',
+        'copy',
+        'from',
+        '--device',
+        _udid(ctx),
+        '--source',
+        remotePath,
+        '--destination',
+        outPath,
+        '--domain-type',
+        'appDataContainer',
+        '--domain-identifier',
+        bundleCandidate,
+      ], const ExecOptions(allowFailure: true, timeoutMs: 60000));
+      if (pull.exitCode == 0) {
+        return BackendRecordingResult(path: outPath);
       }
-      return BackendRecordingResult(
-        path: outPath,
-        warning:
-            'devicectl copy from $remotePath failed across ${bundles.length} '
-            'container bundle(s). Last tried "$lastBundle" '
-            '(exit $lastExit): $lastStderr',
-      );
+      lastExit = pull.exitCode;
+      lastStderr = pull.stderr.trim();
+      lastBundle = bundleCandidate;
     }
-
-    // Simulator: the runner wrote into its on-sim-host sandbox, which
-    // is directly accessible on the host file system.
-    final src = File(resolved);
-    if (!await src.exists()) {
-      return BackendRecordingResult(
-        path: outPath,
-        warning:
-            'Recording file did not appear on host at $resolved. The runner '
-            'may still be finalizing.',
-      );
-    }
-    await src.copy(dst.path);
-    return BackendRecordingResult(path: outPath);
+    return BackendRecordingResult(
+      path: outPath,
+      warning:
+          'devicectl copy from $remotePath failed across ${bundles.length} '
+          'container bundle(s). Last tried "$lastBundle" '
+          '(exit $lastExit): $lastStderr',
+    );
   }
 
   static Future<String?> _findLatestResolvedRecordingPath(
@@ -1445,4 +1522,97 @@ class _IosKindCache {
 
   String? get(String udid) => _kinds[udid];
   void set(String udid, String kind) => _kinds[udid] = kind;
+}
+
+// ---------------------------------------------------------------------------
+// iOS simulator recording PID management
+// ---------------------------------------------------------------------------
+// Mirrors the Android `_AndroidRecorderRecord` pattern: persist the host-side
+// PID of `simctl io recordVideo` so a later CLI invocation can stop it.
+
+class _IosRecorderRecord {
+  final String udid;
+  final int pid;
+  final String outPath;
+
+  const _IosRecorderRecord({
+    required this.udid,
+    required this.pid,
+    required this.outPath,
+  });
+
+  Map<String, Object?> toJson() => {
+    'udid': udid,
+    'pid': pid,
+    'outPath': outPath,
+  };
+
+  static _IosRecorderRecord? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final udid = raw['udid'];
+    final pid = raw['pid'];
+    final outPath = raw['outPath'];
+    if (udid is! String || pid is! int || outPath is! String) return null;
+    return _IosRecorderRecord(udid: udid, pid: pid, outPath: outPath);
+  }
+}
+
+File _iosRecorderFile(String udid) =>
+    File(p.join(resolveStatePaths().baseDir, 'ios-recorders', '$udid.json'));
+
+Future<_IosRecorderRecord?> _readIosRecorder(String udid) async {
+  final file = _iosRecorderFile(udid);
+  if (!await file.exists()) return null;
+  try {
+    return _IosRecorderRecord.fromJson(
+      jsonDecode(await file.readAsString()),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> _writeIosRecorder(_IosRecorderRecord record) async {
+  final file = _iosRecorderFile(record.udid);
+  await file.parent.create(recursive: true);
+  await file.writeAsString(jsonEncode(record.toJson()));
+}
+
+Future<void> _deleteIosRecorder(String udid) async {
+  final file = _iosRecorderFile(udid);
+  if (await file.exists()) await file.delete();
+}
+
+bool _isProcessAlive(int pid) {
+  try {
+    return Process.killPid(pid, ProcessSignal.sigcont);
+  } catch (_) {
+    return false;
+  }
+}
+
+void _signalProcess(int pid, ProcessSignal signal) {
+  try {
+    Process.killPid(pid, signal);
+  } catch (_) {
+    // Process may already be dead.
+  }
+}
+
+/// Fallback: find orphaned `simctl io <udid> recordVideo` processes via
+/// `pgrep -f` and signal them. Catches cases where the PID file was lost.
+Future<void> _signalMatchingSimctlRecorders(
+  String udid,
+  ProcessSignal signal,
+) async {
+  try {
+    final r = await Process.run('pgrep', ['-f', 'simctl io $udid recordVideo']);
+    if (r.exitCode != 0) return;
+    for (final line in (r.stdout as String).trim().split('\n')) {
+      final pid = int.tryParse(line.trim());
+      if (pid != null && pid > 0) _signalProcess(pid, signal);
+    }
+  } catch (_) {
+    // pgrep may not be available; best-effort.
+  }
 }
