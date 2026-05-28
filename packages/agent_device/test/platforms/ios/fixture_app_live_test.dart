@@ -143,12 +143,9 @@ void main() {
         FixtureIds.stateBatchCountText,
         'Batch count: 3',
       );
-      await tapId(device, FixtureIds.stateShowConfirmationSnackbarButton);
-      await expectIdText(
-        device,
-        FixtureIds.stateConfirmationSnackbarText,
-        'Confirmation snackbar visible',
-      );
+      // Load recommendations BEFORE showing snackbar — on small CI
+      // viewports the snackbar overlay covers the bottom buttons and
+      // intercepts taps.
       await tapId(device, FixtureIds.stateLoadRecommendationsButton);
       await expectVisibleId(
         device,
@@ -156,6 +153,12 @@ void main() {
         timeout: const Duration(seconds: 15),
       );
       await expectVisibleId(device, FixtureIds.stateRecommendationCaptureLogs);
+      await tapId(device, FixtureIds.stateShowConfirmationSnackbarButton);
+      await expectIdText(
+        device,
+        FixtureIds.stateConfirmationSnackbarText,
+        'Confirmation snackbar visible',
+      );
     },
     timeout: const Timeout(Duration(seconds: 150)),
   );
