@@ -55,5 +55,14 @@ Notes:
 - macOS branch of `resolveIosApp` not ported (no macOS module yet)
 - `resolveIosApp` is new in this file as of commit 2c73e39b port; callers currently use bundleId directly
 
+| `commands/snapshot-unchanged.ts` | `snapshot/unchanged.dart` |
+
+**Snapshot unchanged detection pattern (dea6c3b1):**
+- TS has a `snapshotCommand` runtime-command layer above the backend; Dart ports this logic directly into `AgentDevice.snapshot()`
+- `forceFull` is not passed to `BackendSnapshotOptions` — it's session-layer only
+- `SnapshotNode.focused` is not yet in the Dart port; omit from comparable key in `_buildComparableKey`
+- The comparable key uses `StringBuffer` (no `dart:convert` import needed) instead of `JSON.stringify`
+- CLI flag changes (`snapshotForceFull`, `withoutUnchanged`) not ported — no CLI layer in Dart port
+
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.
