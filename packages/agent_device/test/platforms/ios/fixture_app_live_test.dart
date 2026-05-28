@@ -183,16 +183,22 @@ void main() {
       await tapId(device, FixtureIds.stateLoadRecommendationsButton);
       // Post-tap diagnostic — what screen are we on?
       {
+        await Future<void>.delayed(const Duration(seconds: 1));
         final diag = await device.snapshot();
         final nodes = (diag.nodes ?? const [])
             .whereType<SnapshotNode>()
             .toList();
-        final topLabels = nodes
-            .where((n) => n.label != null && n.label!.isNotEmpty)
-            .take(5)
-            .map((n) => '${n.type}:"${n.label}"')
-            .join(', ');
-        print('[diag] After tap, top nodes: $topLabels');
+        print('[diag] After tap: ${nodes.length} nodes');
+        for (final n in nodes.take(20)) {
+          final r = n.rect;
+          final rectStr = r != null
+              ? 'x=${r.x} y=${r.y} w=${r.width} h=${r.height}'
+              : 'null';
+          print(
+            '[diag]   ${n.type} label="${n.label ?? ''}" '
+            'id="${n.identifier ?? ''}" [$rectStr]',
+          );
+        }
       }
       await expectVisibleId(
         device,
