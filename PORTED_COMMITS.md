@@ -130,7 +130,7 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `168de53b` | fix: improve Android snapshot fidelity (#580) | pending | — | Overlay ref refactor, presentation module split |
 | `6617d523` | 0.15.1 | n/a | — | Version bump |
 | `a5fffc6e` | feat: add Maestro YAML replay compatibility (#581) | pending | — | Full Maestro compat; supersedes `896adcc6` |
-| `bda96f1b` | fix: allow inventory selectors with session locks (#583) | pending | — | Exempt apps/devices from lock policy |
+| `bda96f1b` | fix: allow inventory selectors with session locks (#583) | n/a | — | Daemon lock policy only; Dart has no `applyRequestLockPolicy` — explicit selectors are always honored in `openAgentDevice()`, `DevicesCommand` already bypasses session state entirely |
 | `c72cf0e1` | fix: clarify Android gesture transform behavior (#584) | pending | — | Depends on `47b981c8` |
 | `93b04b2c` | docs: simplify README overview (#585) | n/a | — | Docs |
 | `ea217931` | feat: support ios transform gesture (#586) | pending | — | ObjC synthesized gesture; depends on `47b981c8` |
