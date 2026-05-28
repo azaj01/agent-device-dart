@@ -16,6 +16,7 @@ import 'package:agent_device/src/snapshot/unchanged.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/png.dart' as png;
 
+import 'package:agent_device/src/platforms/ios/ios_backend.dart';
 import 'package:agent_device/src/utils/scroll_edge_state.dart';
 
 import 'contract.dart';
@@ -347,10 +348,15 @@ class AgentDevice {
   }
 
   /// Tap resolved from an [InteractionTarget] (point, `@ref`, or selector).
+  ///
+  /// For iOS with a simple single-term selector (id/label/text/value), the
+  /// runner resolves and taps the element in one round-trip — no snapshot
+  /// needed. Falls back to snapshot-based resolution on failure.
   Future<void> tapTarget(
     InteractionTarget target, {
     BackendTapOptions? options,
   }) async {
+    if (await _tryDirectIosSelectorTap(target)) return;
     final point = await resolveTarget(target);
     await backend.tap(await _ctx(), point, options);
   }
@@ -365,11 +371,16 @@ class AgentDevice {
   }
 
   /// Fill resolved from an [InteractionTarget].
+  ///
+  /// For iOS with a simple single-term selector (id/label/text/value), the
+  /// runner resolves, focuses, and fills the element in one round-trip.
+  /// Falls back to snapshot-based resolution on failure.
   Future<void> fillTarget(
     InteractionTarget target,
     String text, {
     int? delayMs,
   }) async {
+    if (await _tryDirectIosSelectorFill(target, text)) return;
     final point = await resolveTarget(target);
     await backend.fill(
       await _ctx(),
@@ -1062,6 +1073,88 @@ class AgentDevice {
     if (raw == null) return const [];
     if (raw is List<SnapshotNode>) return raw;
     return raw.whereType<SnapshotNode>().toList();
+  }
+
+  // -------------------------------------------------------------------------
+  // Direct iOS selector optimization (ports upstream 094c2907)
+  // -------------------------------------------------------------------------
+
+  static const _directSelectorKeys = {'id', 'label', 'text', 'value'};
+
+  /// Extract a simple single-term selector suitable for direct runner
+  /// dispatch. Returns null if the target isn't a simple selector or
+  /// the backend isn't iOS.
+  ({String key, String value})? _readDirectIosSelector(
+    InteractionTarget target,
+  ) {
+    if (backend is! IosBackend) return null;
+    if (target is! SelectorTarget) return null;
+    final chain = target.chain;
+    if (chain.selectors.isEmpty) return null;
+    // Only optimize single-alternative, single-term selectors.
+    // Multi-term or multi-alternative selectors need snapshot resolution.
+    final selector = chain.selectors.first;
+    if (selector.terms.length != 1) return null;
+    final term = selector.terms.first;
+    if (term.value is! String) return null;
+    final key = term.key;
+    if (!_directSelectorKeys.contains(key)) return null;
+    return (key: key, value: term.value as String);
+  }
+
+  /// Try a direct runner selector tap. Returns true if it succeeded,
+  /// false if the target isn't suitable or the runner rejected it
+  /// (in which case the caller should fall back to snapshot resolution).
+  Future<bool> _tryDirectIosSelectorTap(InteractionTarget target) async {
+    final direct = _readDirectIosSelector(target);
+    if (direct == null) return false;
+    try {
+      await (backend as IosBackend).tapElementSelector(
+        ctx: await _ctx(),
+        selectorKey: direct.key,
+        selectorValue: direct.value,
+      );
+      return true;
+    } on AppError catch (e) {
+      final msg = e.message.toLowerCase();
+      if (msg.contains('timed out') ||
+          msg.contains('timeout') ||
+          msg.contains('fetch failed') ||
+          msg.contains('not accept connection') ||
+          msg.contains('invalid runner response')) {
+        return false;
+      }
+      rethrow;
+    }
+  }
+
+  /// Try a direct runner selector fill. Same semantics as
+  /// [_tryDirectIosSelectorTap].
+  Future<bool> _tryDirectIosSelectorFill(
+    InteractionTarget target,
+    String text,
+  ) async {
+    final direct = _readDirectIosSelector(target);
+    if (direct == null) return false;
+    try {
+      await (backend as IosBackend).fillElementSelector(
+        ctx: await _ctx(),
+        selectorKey: direct.key,
+        selectorValue: direct.value,
+        text: text,
+      );
+      return true;
+    } on AppError catch (e) {
+      final msg = e.message.toLowerCase();
+      if (msg.contains('timed out') ||
+          msg.contains('timeout') ||
+          msg.contains('fetch failed') ||
+          msg.contains('not accept connection') ||
+          msg.contains('invalid runner response')) {
+        return false;
+      }
+      rethrow;
+    }
   }
 
   /// Internal: resolve [target] all the way to a [SnapshotNode] (rather

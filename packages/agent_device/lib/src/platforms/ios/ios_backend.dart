@@ -236,6 +236,63 @@ class IosBackend extends Backend {
     return null;
   }
 
+  /// Direct selector tap: the runner finds the element by accessibility
+  /// property and taps it in a single round-trip — no snapshot needed.
+  /// Returns null on success, throws on runner error.
+  Future<Map<String, Object?>?> tapElementSelector({
+    required BackendCommandContext ctx,
+    required String selectorKey,
+    required String selectorValue,
+  }) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    final res = await IosRunnerClient.send(session, {
+      'command': 'tap',
+      'selectorKey': selectorKey,
+      'selectorValue': selectorValue,
+      'appBundleId': ?bundleId,
+    });
+    if (!res.ok) {
+      throw AppError(
+        AppErrorCodes.commandFailed,
+        'iOS runner tap (selector) failed: ${res.errorMessage ?? 'unknown'}',
+      );
+    }
+    session.lastSuccessAt = DateTime.now();
+    return res.data is Map<String, Object?>
+        ? res.data as Map<String, Object?>
+        : null;
+  }
+
+  /// Direct selector fill: the runner finds the element, focuses it,
+  /// and types text — no snapshot needed.
+  Future<Map<String, Object?>?> fillElementSelector({
+    required BackendCommandContext ctx,
+    required String selectorKey,
+    required String selectorValue,
+    required String text,
+  }) async {
+    final session = await _runner(ctx);
+    final bundleId = _appBundleId(ctx);
+    final res = await IosRunnerClient.send(session, {
+      'command': 'fill',
+      'selectorKey': selectorKey,
+      'selectorValue': selectorValue,
+      'text': text,
+      'appBundleId': ?bundleId,
+    });
+    if (!res.ok) {
+      throw AppError(
+        AppErrorCodes.commandFailed,
+        'iOS runner fill (selector) failed: ${res.errorMessage ?? 'unknown'}',
+      );
+    }
+    session.lastSuccessAt = DateTime.now();
+    return res.data is Map<String, Object?>
+        ? res.data as Map<String, Object?>
+        : null;
+  }
+
   @override
   Future<BackendActionResult> longPress(
     BackendCommandContext ctx,
