@@ -118,4 +118,25 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `094c2907` | perf: speed up iOS replay runner (#557) | ported | `1ed2e6e` | Direct selector tap, fast foreground guard |
 | `4491efde` | 0.15.0 | n/a | — | Version bump |
 | `840bef56` | fix: tighten env var surface (#560) | ported | `1ed2e6e` | Swift runner env var guards |
-| `896adcc6` | feat: add maestro replay compatibility (#561) | pending | — | Maestro YAML replay format |
+| `896adcc6` | feat: add maestro replay compatibility (#561) | pending | — | Superseded by `a5fffc6e` |
+| `f71371eb` | fix: handle platform alerts (#562) | pending | — | Alert detection + classification for Android/iOS |
+| `b0e19c9d` | perf: improve recording and interaction flows (#563) | pending | — | Scroll-to-edge, recording perf |
+| `dfd5c712` | perf: speed up hot iOS taps (#572) | pending | — | Skip readiness preflight for hot taps |
+| `67aa89af` | feat: add iOS repro evidence capabilities (#573) | pending | — | Launch console, improved log predicates |
+| `cd55a6a5` | fix: harden iOS simulator recording cleanup (#575) | pending | — | Multi-stage signal escalation for recording stop |
+| `47b981c8` | feat: add gesture command coverage (#576) | pending | — | Gesture umbrella (pan/fling/rotate/transform) + multitouch helper |
+| `0bc1b1e9` | fix: simplify iOS interactive snapshots (#578) | pending | — | iOS snapshot presentation layer |
+| `5b63b9b4` | fix: make swift helper cache builds concurrent-safe (#579) | pending | — | Filesystem lock for swift cache |
+| `168de53b` | fix: improve Android snapshot fidelity (#580) | pending | — | Overlay ref refactor, presentation module split |
+| `6617d523` | 0.15.1 | n/a | — | Version bump |
+| `a5fffc6e` | feat: add Maestro YAML replay compatibility (#581) | pending | — | Full Maestro compat; supersedes `896adcc6` |
+| `bda96f1b` | fix: allow inventory selectors with session locks (#583) | pending | — | Exempt apps/devices from lock policy |
+| `c72cf0e1` | fix: clarify Android gesture transform behavior (#584) | pending | — | Depends on `47b981c8` |
+| `93b04b2c` | docs: simplify README overview (#585) | n/a | — | Docs |
+| `ea217931` | feat: support ios transform gesture (#586) | pending | — | ObjC synthesized gesture; depends on `47b981c8` |
+| `bbe7c06f` | feat: auto-reverse Android localhost opens (#590) | pending | — | Auto `adb reverse` for localhost URLs |
+| `87f087ca` | fix: capture Android snapshot timeout evidence (#591) | pending | — | Fallback screenshot on snapshot timeout |
+| `dcc74218` | fix: recover Android app-owned ANRs (#592) | pending | — | Auto-recover app ANRs; depends on `f71371eb` |
+| `819d7dc8` | feat: expose structured MCP command tools (#593) | n/a | — | MCP server only |
+| `25c7ade7` | test: remove 151 unit tests fully covered by integration tests (#595) | n/a | — | TS test infra |
+| `9a6bb6f7` | 0.15.2 | n/a | — | Version bump |
