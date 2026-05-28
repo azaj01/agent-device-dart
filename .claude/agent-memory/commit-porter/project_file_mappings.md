@@ -136,5 +136,26 @@ Notes:
 - AdbProvider touch-injector override (`resolveAndroidTouchInjector`) not ported — no provider injection layer in Dart
 - `@visibleForTesting` helpers `parseAndroidMultitouchHelperManifestForTest` + `parseAndroidMultitouchHelperOutputForTest` expose internal parsers for tests
 
+**iOS log predicate pattern (67aa89af):**
+- `buildAppleLogPredicate(bundleId, executableName?)` → `_buildAppleLogPredicate(bundleId, [executableName])` private top-level function in `ios_backend.dart`
+- `_resolveIosSimulatorExecutableName({udid, appBundleId})` uses `simctl get_app_container` + `plutil -extract CFBundleExecutable raw` to resolve the binary name
+- Both `startLogStream` and `readLogs` now call `_resolveIosSimulatorExecutableName` before building predicates
+- Daemon `app-log-ios.ts` functions (startIosSimulatorAppLog etc.) live in Dart inside `ios_backend.dart` inline logic — no separate app-log file
+- `core/launch-console.ts` constants (LAUNCH_CONSOLE_IOS_SIMULATOR_ONLY_MESSAGE, LAUNCH_CONSOLE_DIRECT_APP_ONLY_MESSAGE) → not a separate file in Dart; validations not ported (no dispatch/CLI layer)
+
+**iOS launch console pattern (67aa89af):**
+- `BackendOpenOptions.launchConsole` (String?) added to `options.dart`
+- `openIosApp(udid, bundleId, {launchConsole})` in `app_lifecycle.dart` — `--console-pty` flag added to `simctl launch`; combined stdout+stderr written to logPath
+- Timeout handling: `ExecOptions(allowFailure: true, timeoutMs: 25000)` — on `AppError` with matching `details['timeoutMs']`, flush captured output (timeout is graceful for console capture)
+- `_joinProcessOutput` helper avoids double-newline between stdout and stderr
+- `ios_backend.dart openApp` passes `options?.launchConsole` to `openIosApp`
+
+**iOS runner Swift file update pattern (ea217931):**
+- The iOS runner Swift files (`RunnerTests+Models.swift`, `RunnerTests+CommandExecution.swift`, `RunnerTests+Interaction.swift`) are bundled under `lib/src/native/ios-runner/AgentDeviceRunner/AgentDeviceRunnerUITests/`
+- The runner uses `PBXFileSystemSynchronizedRootGroup` in its Xcode project — new source files dropped in the directory are picked up automatically; no pbxproj update needed
+- When upstream adds new command types to the runner, update all three Swift files: Models (CommandType enum + Command struct fields), CommandExecution (switch cases), Interaction (implementation functions)
+- `RunnerTests+CommandExecution.swift` cases use distinct local variable names for outcome/timing to avoid Swift shadowing warnings (e.g., `rotateOutcome`, `rotateTiming`, `transformOutcome`, `transformTiming`)
+- `RunnerSynthesizedGesture.h/.m` pattern: ObjC class, bridging header import; the runner's `transformGesture()` Swift function computes radius from `interactionRoot(app:).frame` internally; Dart caller does NOT send radius
+
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.
