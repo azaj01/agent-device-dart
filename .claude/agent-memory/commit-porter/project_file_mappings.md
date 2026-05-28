@@ -157,5 +157,18 @@ Notes:
 - `RunnerTests+CommandExecution.swift` cases use distinct local variable names for outcome/timing to avoid Swift shadowing warnings (e.g., `rotateOutcome`, `rotateTiming`, `transformOutcome`, `transformTiming`)
 - `RunnerSynthesizedGesture.h/.m` pattern: ObjC class, bridging header import; the runner's `transformGesture()` Swift function computes radius from `interactionRoot(app:).frame` internally; Dart caller does NOT send radius
 
+| `daemon/snapshot-presentation/tree.ts` | `snapshot/presentation_tree.dart` |
+| `daemon/snapshot-presentation/ios/index.ts` + `ios/actions.ts` + `ios/noise.ts` + `ios/rows.ts` + `ios/scroll.ts` | `snapshot/ios_presentation.dart` (merged into one file) |
+| `utils/repeated-nav-subtree.ts` | `utils/repeated_nav_subtree.dart` |
+| `utils/snapshot-label-signals.ts` | helpers kept private in `repeated_nav_subtree.dart` (no separate file) |
+
+**iOS presentation pipeline wiring pattern (0bc1b1e9):**
+- `presentIosInteractiveSnapshot` called in `IosBackend.captureSnapshot()` when `options?.interactiveOnly == true && options?.raw != true`
+- `_shouldPresentIosInteractiveSnapshot(options)` helper encapsulates the condition
+- Upstream daemon `snapshot-capture.ts` wiring: `backend === 'xctest' && flags?.snapshotInteractiveOnly === true && flags.snapshotRaw !== true`
+- `mergeReplacement` in Dart uses named parameters instead of a `Partial<RawSnapshotNode>` spread object
+- `collectDescendants` uses depth-based forward scan (not parentIndex traversal)
+- `normalizeType` was already made public in `processing.dart` as of commit `5671ce9`
+
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.
