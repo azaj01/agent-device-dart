@@ -56,6 +56,18 @@ Notes:
 - `resolveIosApp` is new in this file as of commit 2c73e39b port; callers currently use bundleId directly
 
 | `commands/snapshot-unchanged.ts` | `snapshot/unchanged.dart` |
+| `daemon/wait-current-surface.ts` | `runtime/wait_current_surface.dart` |
+| `alert-contract.ts` | types inlined into `backend/options.dart` (`AlertPlatform`, `AlertSource`, constants inlined into `alert.dart`) |
+| `platforms/android/alert-detection.ts` | `platforms/android/alert_detection.dart` |
+| `platforms/android/alert.ts` | `platforms/android/alert.dart` |
+| `platforms/android/fill-verification.ts` | `platforms/android/fill_verification.dart` |
+| `platforms/fill-diagnostics.ts` | `platforms/fill_diagnostics.dart` |
+
+**Wait current surface pattern (d268b79a):**
+- Upstream wraps `DaemonResponse` at response boundary; Dart enriches `AppError` inline in `wait()` polling loop
+- Surface inspection uses `captureSnapshot(interactiveOnly: true, compact: true)` — distinguished from polling calls by checking both flags
+- `isWaitTimeoutMessage` uses `contains('timed out')` (not a regex) to match the Dart timeout format
+- `_normalizeType` is duplicated locally (private); not exported from processing.dart
 
 **Snapshot unchanged detection pattern (dea6c3b1):**
 - TS has a `snapshotCommand` runtime-command layer above the backend; Dart ports this logic directly into `AgentDevice.snapshot()`
