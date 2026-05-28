@@ -76,5 +76,18 @@ Notes:
 - The comparable key uses `StringBuffer` (no `dart:convert` import needed) instead of `JSON.stringify`
 - CLI flag changes (`snapshotForceFull`, `withoutUnchanged`) not ported — no CLI layer in Dart port
 
+| `platforms/fill-diagnostics.ts` | `platforms/fill_diagnostics.dart` |
+| `platforms/android/fill-verification.ts` | `platforms/android/fill_verification.dart` |
+
+**AndroidUiNodeMetadata pattern (600e9565):**
+- `readNodeAttributes` and `parseBounds` are private in TS after this refactor; the Dart port made them private too
+- `androidUiNodes(xml)` is the public flat-iterator API; returns `Iterable<AndroidUiNodeMetadata>`
+- `_readAndroidUiNodeMetadata(node)` is the private per-node builder used by both `androidUiNodes` and `parseUiHierarchyTree`
+
+**FillDiagnosticNode inheritance pattern:**
+- `AndroidFillVerificationNode extends FillDiagnosticNode` — don't redeclare parent fields; use `super.` params
+- Non-nullable narrowing can't be enforced via field override in Dart; add a getter (e.g. `verificationRect`) for non-null access
+- Context classes used as named params in public functions must be public to avoid `library_private_types_in_public_api` lint
+
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.
