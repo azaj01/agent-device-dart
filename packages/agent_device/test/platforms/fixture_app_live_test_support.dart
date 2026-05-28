@@ -126,7 +126,13 @@ Future<void> expectVisibleId(
   String id, {
   Duration timeout = const Duration(seconds: 10),
 }) async {
-  await device.wait('exists', _idTarget(id), timeout: timeout);
+  try {
+    await device.wait('exists', _idTarget(id), timeout: timeout);
+  } catch (e) {
+    throw TestFailure(
+      'expectVisibleId("$id") failed after ${timeout.inSeconds}s: $e',
+    );
+  }
 }
 
 Future<void> expectHiddenId(
@@ -134,7 +140,13 @@ Future<void> expectHiddenId(
   String id, {
   Duration timeout = const Duration(seconds: 10),
 }) async {
-  await device.wait('hidden', _idTarget(id), timeout: timeout);
+  try {
+    await device.wait('hidden', _idTarget(id), timeout: timeout);
+  } catch (e) {
+    throw TestFailure(
+      'expectHiddenId("$id") failed after ${timeout.inSeconds}s: $e',
+    );
+  }
 }
 
 Future<void> expectIdText(

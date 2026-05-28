@@ -646,6 +646,7 @@ class _StateLabScreenState extends State<StateLabScreen> {
                   onPressed: () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
+                        duration: const Duration(seconds: 15),
                         content: _identified(
                           FixtureIds.stateConfirmationSnackbarText,
                           const Text('Confirmation snackbar visible'),
