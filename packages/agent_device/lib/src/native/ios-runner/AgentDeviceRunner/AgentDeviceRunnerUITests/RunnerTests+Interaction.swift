@@ -1304,6 +1304,64 @@ extension RunnerTests {
 #endif
   }
 
+  func rotateGesture(app: XCUIApplication, degrees: Double, x: Double?, y: Double?, velocity: Double) -> RunnerInteractionOutcome {
+    return performCoordinateRotateGesture(app: app, degrees: degrees, x: x, y: y, velocity: velocity)
+  }
+
+  func transformGesture(
+    app: XCUIApplication,
+    x: Double,
+    y: Double,
+    dx: Double,
+    dy: Double,
+    scale: Double,
+    degrees: Double,
+    durationMs: Double
+  ) -> RunnerInteractionOutcome {
+#if os(iOS)
+    let target = interactionRoot(app: app)
+    if let message = RunnerSynthesizedGesture.synthesizeTransform(
+      withApplication: app,
+      x: x,
+      y: y,
+      dx: dx,
+      dy: dy,
+      scale: scale,
+      degrees: degrees,
+      radius: transformGestureRadius(frame: target.frame, scale: scale),
+      durationMs: durationMs
+    ) {
+      return .unsupported(message)
+    }
+    return .performed
+#elseif os(tvOS)
+    return .unsupported("transformGesture is not supported on tvOS")
+#else
+    return .unsupported("transformGesture is not supported on macOS")
+#endif
+  }
+
+  private func transformGestureRadius(frame: CGRect, scale: Double) -> Double {
+    let shorterSide = Double(min(frame.width, frame.height))
+    let frameRadius = shorterSide * 0.20
+    let minimumEndRadius = shorterSide * 0.08
+    let scaleAdjustedRadius = scale < 1.0 ? max(frameRadius, minimumEndRadius / scale) : frameRadius
+    return min(max(scaleAdjustedRadius, 48.0), shorterSide * 0.35)
+  }
+
+  private func performCoordinateRotateGesture(app: XCUIApplication, degrees: Double, x: Double?, y: Double?, velocity: Double) -> RunnerInteractionOutcome {
+#if os(iOS)
+    let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
+    let radians = CGFloat(degrees * .pi / 180.0)
+    target.rotate(radians, withVelocity: CGFloat(velocity))
+    return .performed
+#elseif os(tvOS)
+    return .unsupported("rotate-gesture is not supported on tvOS")
+#else
+    return .unsupported("rotate-gesture is not supported on macOS")
+#endif
+  }
+
   private func interactionRoot(app: XCUIApplication) -> XCUIElement {
     let windows = app.windows.allElementsBoundByIndex
     if let window = windows.first(where: { $0.exists && !$0.frame.isEmpty }) {

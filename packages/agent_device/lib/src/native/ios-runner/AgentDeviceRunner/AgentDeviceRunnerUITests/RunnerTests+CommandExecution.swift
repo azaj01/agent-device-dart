@@ -776,6 +776,82 @@ extension RunnerTests {
           gestureEndUptimeMs: timing.gestureEndUptimeMs
         )
       )
+    case .rotateGesture:
+      guard let degrees = command.degrees, degrees.isFinite else {
+        return Response(ok: false, error: ErrorPayload(message: "rotateGesture requires degrees"))
+      }
+      let velocity = command.velocity ?? (degrees >= 0 ? 1.0 : -1.0)
+      guard velocity.isFinite && velocity != 0 else {
+        return Response(ok: false, error: ErrorPayload(message: "rotateGesture velocity must be non-zero"))
+      }
+      var rotateOutcome = RunnerInteractionOutcome.performed
+      let rotateTiming = measureGesture {
+        rotateOutcome = rotateGesture(
+          app: activeApp,
+          degrees: degrees,
+          x: command.x,
+          y: command.y,
+          velocity: velocity
+        )
+      }
+      if let response = unsupportedResponse(for: rotateOutcome) {
+        return response
+      }
+      return Response(
+        ok: true,
+        data: DataPayload(
+          message: "rotatedGesture",
+          gestureStartUptimeMs: rotateTiming.gestureStartUptimeMs,
+          gestureEndUptimeMs: rotateTiming.gestureEndUptimeMs
+        )
+      )
+    case .transformGesture:
+      guard
+        let x = command.x,
+        let y = command.y,
+        let dx = command.dx,
+        let dy = command.dy,
+        x.isFinite,
+        y.isFinite,
+        dx.isFinite,
+        dy.isFinite
+      else {
+        return Response(ok: false, error: ErrorPayload(message: "transformGesture requires finite x y dx dy"))
+      }
+      guard let scale = command.scale, scale.isFinite, scale > 0 else {
+        return Response(ok: false, error: ErrorPayload(message: "transformGesture requires scale > 0"))
+      }
+      guard let degrees = command.degrees, degrees.isFinite else {
+        return Response(ok: false, error: ErrorPayload(message: "transformGesture requires finite degrees"))
+      }
+      let durationMs = command.durationMs ?? 300
+      guard durationMs.isFinite && durationMs >= 16 else {
+        return Response(ok: false, error: ErrorPayload(message: "transformGesture durationMs must be >= 16"))
+      }
+      var transformOutcome = RunnerInteractionOutcome.performed
+      let transformTiming = measureGesture {
+        transformOutcome = transformGesture(
+          app: activeApp,
+          x: x,
+          y: y,
+          dx: dx,
+          dy: dy,
+          scale: scale,
+          degrees: degrees,
+          durationMs: durationMs
+        )
+      }
+      if let response = unsupportedResponse(for: transformOutcome) {
+        return response
+      }
+      return Response(
+        ok: true,
+        data: DataPayload(
+          message: "transformedGesture",
+          gestureStartUptimeMs: transformTiming.gestureStartUptimeMs,
+          gestureEndUptimeMs: transformTiming.gestureEndUptimeMs
+        )
+      )
     case .adjustSlider:
 #if os(tvOS)
       return Response(ok: false, error: ErrorPayload(

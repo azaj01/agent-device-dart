@@ -25,6 +25,8 @@ enum CommandType: String, Codable {
   case keyboardDismiss
   case alert
   case pinch
+  case rotateGesture
+  case transformGesture
   case adjustSlider
   case recordStart
   case recordStop
@@ -53,7 +55,11 @@ struct Command: Codable {
   let pattern: String?
   let x2: Double?
   let y2: Double?
+  let dx: Double?
+  let dy: Double?
   let durationMs: Double?
+  let degrees: Double?
+  let velocity: Double?
   let direction: String?
   let orientation: String?
   let scale: Double?
