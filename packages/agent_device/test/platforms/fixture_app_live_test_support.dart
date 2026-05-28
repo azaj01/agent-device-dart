@@ -224,6 +224,17 @@ Future<void> tapId(
   String id, {
   Duration timeout = const Duration(seconds: 10),
 }) async {
+  // On iOS the direct selector tap finds + taps in one round-trip,
+  // so try it first without the expensive snapshot-based visibility
+  // preflight. Fall back to the full path on failure.
+  try {
+    await device.tapTarget(
+      InteractionTarget.selector('id=${jsonEncode(id)}'),
+    );
+    return;
+  } catch (_) {
+    // Direct selector failed — fall back to snapshot-based resolution.
+  }
   await expectVisibleId(device, id, timeout: timeout);
   try {
     await device.tapTarget(

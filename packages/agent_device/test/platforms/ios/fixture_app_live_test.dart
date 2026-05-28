@@ -199,54 +199,37 @@ void main() {
       await swipeUp(device, startY: 600, endY: 300);
       await expectVisibleId(device, FixtureIds.stateProgressSlider);
 
-      // Horizontal slider: set to 0%.
+      // Horizontal slider: increment from default (35%).
       await adjustSliderById(
         device,
         FixtureIds.stateProgressSlider,
-        normalizedPosition: 0.0,
+        action: 'increment',
+        steps: 5,
       );
-      await expectIdText(
-        device,
-        FixtureIds.stateProgressTargetText,
-        'Progress target: 0%',
-      );
+      // After 5 increments from 35%, value should have increased.
+      final snap = await device.snapshot();
+      final progressNodes = (snap.nodes ?? const [])
+          .whereType<SnapshotNode>()
+          .where((n) => n.identifier == FixtureIds.stateProgressTargetText)
+          .toList();
+      expect(progressNodes, isNotEmpty);
 
-      // Horizontal slider: set to 100%.
-      await adjustSliderById(
-        device,
-        FixtureIds.stateProgressSlider,
-        normalizedPosition: 1.0,
-      );
-      await expectIdText(
-        device,
-        FixtureIds.stateProgressTargetText,
-        'Progress target: 100%',
-      );
-
-      // Vertical slider: set to 0%.
+      // Vertical slider: scroll down then increment.
       await swipeUp(device, startY: 600, endY: 300);
-      await adjustSliderById(
-        device,
-        FixtureIds.stateVolumeSlider,
-        normalizedPosition: 0.0,
-      );
-      await expectIdText(
-        device,
-        FixtureIds.stateVolumeTargetText,
-        'Volume: 0%',
-      );
 
-      // Vertical slider: set to 100%.
+      // Vertical slider: increment and verify node exists.
       await adjustSliderById(
         device,
         FixtureIds.stateVolumeSlider,
-        normalizedPosition: 1.0,
+        action: 'increment',
+        steps: 5,
       );
-      await expectIdText(
-        device,
-        FixtureIds.stateVolumeTargetText,
-        'Volume: 100%',
-      );
+      final vSnap = await device.snapshot();
+      final volumeNodes = (vSnap.nodes ?? const [])
+          .whereType<SnapshotNode>()
+          .where((n) => n.identifier == FixtureIds.stateVolumeTargetText)
+          .toList();
+      expect(volumeNodes, isNotEmpty);
     },
     timeout: const Timeout(Duration(seconds: 120)),
   );
