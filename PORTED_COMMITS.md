@@ -71,9 +71,9 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `d2a3742c` | fix: enable tvOS compilation for XCUITest runner (#492) | ported | `1ed2e6e` | RunnerTests+TvRemote.swift |
 | `076f0c07` | chore: upgrade skillgym to 0.8.0 (#493) | n/a | — | skillgym |
 | `25d72895` | feat: add MCP discovery router (#494) | n/a | — | MCP server |
-| `5df37ec9` | fix: improve android fill verification diagnostics (#495) | ported | (bundled with 600e9565) | fill_verification.dart + fill_diagnostics.dart; ported together with 600e9565 as one unit |
+| `5df37ec9` | fix: improve android fill verification diagnostics (#495) | ported | `813b123` | fill_verification.dart + fill_diagnostics.dart; files landed in the f71371eb port commit as prior uncommitted work |
 | `2ebb9aa4` | docs: improve agent discovery onboarding (#496) | n/a | — | Docs |
-| `600e9565` | refactor: share android hierarchy metadata (#497) | ported | (bundled with 5df37ec9) | AndroidUiNodeMetadata + androidUiNodes() in ui_hierarchy.dart; readNodeAttributes/parseBounds made private; input_actions.dart delegates to fill_verification.dart |
+| `600e9565` | refactor: share android hierarchy metadata (#497) | ported | `813b123` | AndroidUiNodeMetadata + androidUiNodes() in ui_hierarchy.dart; readNodeAttributes/parseBounds restored as public aliases; input_actions.dart delegates to fill_verification.dart; landed in same commit as f71371eb port |
 | `8a1e1955` | docs: trim stale internal docs (#498) | n/a | — | Docs |
 | `23dc6a8f` | fix: keep MCP registry description valid (#499) | n/a | — | MCP |
 | `af5db7f8` | 0.14.8 | n/a | — | Version bump |
