@@ -669,9 +669,12 @@ class _StateLabScreenState extends State<StateLabScreen> {
               child: Column(
                 children: _recommendations
                     .map(
-                      (item) => ListTile(
-                        title: _identified(_recommendationId(item), Text(item)),
-                        dense: true,
+                      (item) => _identifiedControl(
+                        _recommendationId(item),
+                        ListTile(
+                          title: Text(item),
+                          dense: true,
+                        ),
                       ),
                     )
                     .toList(),
