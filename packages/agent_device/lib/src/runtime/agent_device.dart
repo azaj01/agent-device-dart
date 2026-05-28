@@ -16,6 +16,8 @@ import 'package:agent_device/src/snapshot/unchanged.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/png.dart' as png;
 
+import 'package:agent_device/src/utils/scroll_edge_state.dart';
+
 import 'contract.dart';
 import 'interaction_target.dart';
 import 'session_store.dart';
@@ -475,25 +477,69 @@ class AgentDevice {
     );
   }
 
-  /// Scroll in a [direction] (`'up'`, `'down'`, `'left'`, `'right'`) on
-  /// the viewport.
+  /// Scroll in a [direction] on the viewport.
+  ///
+  /// Standard directions: `'up'`, `'down'`, `'left'`, `'right'`.
+  /// Edge shortcuts: `'top'` scrolls up until hidden content above is gone;
+  /// `'bottom'` scrolls down until hidden content below is gone.
   Future<Object?> scroll(
     String direction, {
     int? amount,
     int? pixels,
     Point? at,
   }) async {
-    final target = at == null
+    final scrollTarget = _resolveScrollTarget(direction);
+    final backendTarget = at == null
         ? const BackendScrollTargetViewport()
         : BackendScrollTargetPoint(at);
+
+    if (scrollTarget.edge != null) {
+      final edge = scrollTarget.edge!;
+      final ctx = await _ctx();
+      final edgeResult = await runScrollEdgePasses<BackendActionResult>(
+        edge: edge,
+        captureState: (scope) => _captureScrollEdgeState(ctx, edge, scope),
+        scroll: () => backend.scroll(
+          ctx,
+          backendTarget,
+          BackendScrollOptions(
+            direction: scrollTarget.direction,
+            amount: amount,
+            pixels: pixels,
+          ),
+        ),
+      );
+      return edgeResult.result;
+    }
+
     return backend.scroll(
       await _ctx(),
-      target,
+      backendTarget,
       BackendScrollOptions(
-        direction: direction,
+        direction: scrollTarget.direction,
         amount: amount,
         pixels: pixels,
       ),
+    );
+  }
+
+  Future<ScrollEdgeState> _captureScrollEdgeState(
+    BackendCommandContext ctx,
+    String edge,
+    String? scope,
+  ) {
+    return captureScrollEdgeState(
+      edge: edge,
+      scope: scope,
+      captureNodes: (snapshotScope) async {
+        final result = await backend.captureSnapshot(
+          ctx,
+          BackendSnapshotOptions(compact: true, scope: snapshotScope),
+        );
+        final raw = result.nodes;
+        if (raw == null) return [];
+        return raw.whereType<SnapshotNode>().toList();
+      },
     );
   }
 
@@ -1087,6 +1133,17 @@ class AgentDevice {
     }
     await sessions.delete(sessionName);
   }
+}
+
+/// Map a scroll input direction string to a concrete direction and optional edge.
+///
+/// `'top'` → direction `'up'` + edge `'top'`;
+/// `'bottom'` → direction `'down'` + edge `'bottom'`;
+/// all others pass through unchanged with no edge.
+({String direction, String? edge}) _resolveScrollTarget(String input) {
+  if (input == 'bottom') return (direction: 'down', edge: 'bottom');
+  if (input == 'top') return (direction: 'up', edge: 'top');
+  return (direction: input, edge: null);
 }
 
 /// Parse a [SnapshotBackend] from a string value, returning null if the

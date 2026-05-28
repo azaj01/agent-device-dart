@@ -4,8 +4,10 @@ import 'dart:async';
 
 import '../../platforms/appearance.dart';
 import '../../platforms/permission_utils.dart';
+import '../../platforms/setting_state.dart';
 import '../../utils/errors.dart';
 import '../../utils/exec.dart';
+import '../../utils/location_coordinates.dart';
 import 'adb.dart';
 
 const List<String> _androidAnimationScaleSettings = [
@@ -22,6 +24,8 @@ Future<Map<String, Object?>?> setAndroidSetting(
   String? appPackage,
   String? permissionTarget,
   String? permissionMode,
+  double? latitude,
+  double? longitude,
 }) async {
   final normalized = setting.toLowerCase();
   switch (normalized) {
@@ -32,8 +36,12 @@ Future<Map<String, Object?>?> setAndroidSetting(
       await _setAirplaneSetting(serial, state);
       return null;
     case 'location':
-      await _setLocationSetting(serial, state);
-      return null;
+      return await _setLocationSetting(
+        serial,
+        state,
+        latitude: latitude,
+        longitude: longitude,
+      );
     case 'animations':
       return await _setAnimationsSetting(serial, state);
     case 'appearance':
@@ -62,7 +70,7 @@ Future<Map<String, Object?>?> setAndroidSetting(
 // ===== Setting implementations =====
 
 Future<void> _setWifiSetting(String serial, String state) async {
-  final enabled = _parseSettingState(state);
+  final enabled = parseSettingState(state);
   await runCmd(
     'adb',
     adbArgs(serial, ['shell', 'svc', 'wifi', enabled ? 'enable' : 'disable']),
@@ -70,7 +78,7 @@ Future<void> _setWifiSetting(String serial, String state) async {
 }
 
 Future<void> _setAirplaneSetting(String serial, String state) async {
-  final enabled = _parseSettingState(state);
+  final enabled = parseSettingState(state);
   final flag = enabled ? '1' : '0';
   final bool_ = enabled ? 'true' : 'false';
   await runCmd(
@@ -99,8 +107,39 @@ Future<void> _setAirplaneSetting(String serial, String state) async {
   );
 }
 
-Future<void> _setLocationSetting(String serial, String state) async {
-  final enabled = _parseSettingState(state);
+Future<Map<String, Object?>?> _setLocationSetting(
+  String serial,
+  String state, {
+  double? latitude,
+  double? longitude,
+}) async {
+  if (state.toLowerCase() == 'set') {
+    if (!serial.startsWith('emulator-')) {
+      throw AppError(
+        AppErrorCodes.unsupportedOperation,
+        'Android precise location coordinates are supported only on emulators.',
+        details: {
+          'deviceId': serial,
+          'hint':
+              'Use an Android emulator for adb emu geo fix, or configure '
+              'location through device/provider tooling.',
+        },
+      );
+    }
+    final coords = requireLocationCoordinates(latitude, longitude);
+    await runCmd(
+      'adb',
+      adbArgs(serial, [
+        'emu',
+        'geo',
+        'fix',
+        coords.longitude.toString(),
+        coords.latitude.toString(),
+      ]),
+    );
+    return {'latitude': coords.latitude, 'longitude': coords.longitude};
+  }
+  final enabled = parseSettingState(state);
   final mode = enabled ? '3' : '0';
   await runCmd(
     'adb',
@@ -113,13 +152,14 @@ Future<void> _setLocationSetting(String serial, String state) async {
       mode,
     ]),
   );
+  return null;
 }
 
 Future<Map<String, Object?>> _setAnimationsSetting(
   String serial,
   String state,
 ) async {
-  final enabled = _parseSettingState(state);
+  final enabled = parseSettingState(state);
   final scale = enabled ? '1' : '0';
   for (final key in _androidAnimationScaleSettings) {
     await runCmd(
@@ -271,17 +311,6 @@ bool _isAndroidFingerprintCapabilityMissing(String stdout, String stderr) {
       text.contains('emu command is not supported') ||
       text.contains('emulator console is not running') ||
       (text.contains('fingerprint') && text.contains('not found'));
-}
-
-bool _parseSettingState(String state) {
-  final normalized = state.toLowerCase();
-  if (normalized == 'on' || normalized == 'true' || normalized == '1') {
-    return true;
-  }
-  if (normalized == 'off' || normalized == 'false' || normalized == '0') {
-    return false;
-  }
-  throw AppError(AppErrorCodes.invalidArgs, 'Invalid setting state: $state');
 }
 
 Future<String> _resolveAndroidAppearanceTarget(

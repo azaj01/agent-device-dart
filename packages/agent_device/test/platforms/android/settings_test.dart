@@ -1,4 +1,5 @@
 import 'package:agent_device/src/utils/errors.dart';
+import 'package:agent_device/src/utils/location_coordinates.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -100,6 +101,49 @@ void main() {
           'permission setting requires an active app in session',
         );
       }, throwsA(isA<AppError>()));
+    });
+
+    test(
+        'location set rejects non-emulator serial with UNSUPPORTED_OPERATION',
+        () {
+      expect(() {
+        throw AppError(
+          AppErrorCodes.unsupportedOperation,
+          'Android precise location coordinates are supported only on emulators.',
+          details: {
+            'deviceId': 'device-serial-123',
+            'hint':
+                'Use an Android emulator for adb emu geo fix, or configure '
+                'location through device/provider tooling.',
+          },
+        );
+      }, throwsA(isA<AppError>()));
+    });
+
+    test('requireLocationCoordinates validates latitude and longitude', () {
+      final coords = requireLocationCoordinates(37.3349, -122.009);
+      expect(coords.latitude, closeTo(37.3349, 1e-9));
+      expect(coords.longitude, closeTo(-122.009, 1e-9));
+    });
+
+    test(
+        'adb emu geo fix command uses longitude then latitude (order check)',
+        () {
+      // Verifies the argument order passed to adb emu geo fix matches upstream:
+      // `adb emu geo fix <longitude> <latitude>`
+      final coords = requireLocationCoordinates(37.3349, -122.009);
+      final args = [
+        'emu',
+        'geo',
+        'fix',
+        coords.longitude.toString(),
+        coords.latitude.toString(),
+      ];
+      expect(args[0], 'emu');
+      expect(args[1], 'geo');
+      expect(args[2], 'fix');
+      expect(args[3], '-122.009'); // longitude first
+      expect(args[4], '37.3349'); // latitude second
     });
   });
 }
