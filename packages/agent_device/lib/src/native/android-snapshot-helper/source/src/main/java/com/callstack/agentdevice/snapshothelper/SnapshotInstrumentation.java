@@ -59,14 +59,14 @@ public final class SnapshotInstrumentation extends Instrumentation {
       result.putString("nodeCount", Integer.toString(capture.nodeCount));
       result.putString("truncated", Boolean.toString(capture.truncated));
       result.putString("elapsedMs", Long.toString(System.currentTimeMillis() - startedAtMs));
-      finish(0, result);
+      finishSafely(0, result);
     } catch (Throwable error) {
       result.putString("ok", "false");
       result.putString("errorType", error.getClass().getName());
       result.putString(
           "message",
           error.getMessage() == null ? error.getClass().getName() : error.getMessage());
-      finish(1, result);
+      finishSafely(1, result);
     }
   }
 
@@ -378,5 +378,22 @@ public final class SnapshotInstrumentation extends Instrumentation {
       this.nodeCount = nodeCount;
       this.truncated = truncated;
     }
+  }
+
+  private void finishSafely(int resultCode, Bundle result) {
+    for (int attempt = 0; attempt < 50; attempt++) {
+      try {
+        finish(resultCode, result);
+        return;
+      } catch (IllegalStateException error) {
+        String msg = error.getMessage();
+        if (msg == null || !msg.contains("connecting")) {
+          throw error;
+        }
+        try { Thread.sleep(100); } catch (InterruptedException ignored) {}
+      }
+    }
+    // Last resort: just call finish and let it throw if it must.
+    finish(resultCode, result);
   }
 }
