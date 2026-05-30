@@ -2,7 +2,7 @@
   "app": "flutter-fixture",
   "platform": "ios",
   "device": "iOS simulator 9046550C-D9D6-4832-AFB6-8C0D73D90285",
-  "generated": "2026-05-30T12:54:58.894389Z",
+  "generated": "2026-05-30T15:06:48.084011Z",
   "reps": 5,
   "versions": {
     "dart": "0.0.4",
@@ -11,51 +11,60 @@
   "dart": {
     "cli": "dart",
     "latencyMs": {
-      "startup (--version)": {
-        "count": 5,
-        "min": 30,
-        "median": 34,
-        "p95": 45,
-        "max": 45
+      "snapshot (isolated)": {
+        "count": 10,
+        "min": 252,
+        "median": 277,
+        "p95": 350,
+        "max": 350,
+        "stddev": 37
       },
-      "snapshot": {
+      "snapshot (mixed)": {
         "count": 5,
-        "min": 1326,
-        "median": 1333,
-        "p95": 1402,
-        "max": 1402
+        "min": 259,
+        "median": 296,
+        "p95": 365,
+        "max": 365,
+        "stddev": 35
       },
       "screenshot": {
         "count": 5,
-        "min": 368,
-        "median": 385,
-        "p95": 424,
-        "max": 424
+        "min": 383,
+        "median": 396,
+        "p95": 423,
+        "max": 423,
+        "stddev": 16
       },
       "perf": {
         "count": 5,
-        "min": 737,
-        "median": 748,
-        "p95": 796,
-        "max": 796
+        "min": 844,
+        "median": 1014,
+        "p95": 1816,
+        "max": 1816,
+        "stddev": 348
       },
       "appstate": {
         "count": 5,
-        "min": 445,
-        "median": 449,
-        "p95": 450,
-        "max": 450
+        "min": 443,
+        "median": 477,
+        "p95": 510,
+        "max": 510,
+        "stddev": 27
       },
       "press": {
         "count": 5,
-        "min": 2878,
-        "median": 2897,
-        "p95": 3133,
-        "max": 3133
+        "min": 791,
+        "median": 904,
+        "p95": 1171,
+        "max": 1171,
+        "stddev": 161
       }
     },
+    "failures": {
+      "startup (--version)": 5
+    },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 572
+      "cold open (fresh state dir)": 930
     },
     "accuracy": {
       "passed": 15,
@@ -142,51 +151,60 @@
   "npm": {
     "cli": "npm",
     "latencyMs": {
-      "startup (--version)": {
-        "count": 5,
-        "min": 78,
-        "median": 78,
-        "p95": 85,
-        "max": 85
+      "snapshot (isolated)": {
+        "count": 10,
+        "min": 203,
+        "median": 225,
+        "p95": 307,
+        "max": 307,
+        "stddev": 36
       },
-      "snapshot": {
+      "snapshot (mixed)": {
         "count": 5,
-        "min": 190,
-        "median": 216,
-        "p95": 252,
-        "max": 252
+        "min": 207,
+        "median": 226,
+        "p95": 343,
+        "max": 343,
+        "stddev": 53
       },
       "screenshot": {
         "count": 5,
-        "min": 754,
-        "median": 758,
-        "p95": 1025,
-        "max": 1025
+        "min": 753,
+        "median": 906,
+        "p95": 1475,
+        "max": 1475,
+        "stddev": 256
       },
       "perf": {
         "count": 5,
-        "min": 307,
-        "median": 314,
-        "p95": 322,
-        "max": 322
+        "min": 302,
+        "median": 326,
+        "p95": 677,
+        "max": 677,
+        "stddev": 145
       },
       "appstate": {
         "count": 5,
-        "min": 83,
-        "median": 83,
-        "p95": 90,
-        "max": 90
+        "min": 86,
+        "median": 96,
+        "p95": 165,
+        "max": 165,
+        "stddev": 28
       },
       "press": {
         "count": 5,
-        "min": 644,
-        "median": 661,
-        "p95": 44200,
-        "max": 44200
+        "min": 646,
+        "median": 718,
+        "p95": 1067,
+        "max": 1067,
+        "stddev": 183
       }
     },
+    "failures": {
+      "startup (--version)": 5
+    },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 4073
+      "cold open (fresh state dir)": 4639
     },
     "accuracy": {
       "passed": 15,

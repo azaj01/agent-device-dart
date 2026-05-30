@@ -5,7 +5,7 @@
 | Target app | `flutter-fixture` |
 | Platform | `ios` |
 | Device | iOS simulator 9046550C-D9D6-4832-AFB6-8C0D73D90285 |
-| Generated | 2026-05-30T12:54:58.894389Z |
+| Generated | 2026-05-30T15:06:48.084011Z |
 | Reps (perf) | 5 |
 | Dart binary | `0.0.4` |
 | npm CLI | `0.16.4` |
@@ -16,42 +16,42 @@ Both CLIs drive the **same** Flutter fixture app on the **same** device through 
 
 Median of 5 reps on the Home screen, same booted device, run back-to-back. Lower is better; bars scale to the slower CLI per row.
 
-**`startup (--version)`**
-- dart `█████████░░░░░░░░░░░` 34 ms · p95 45 ms
-- npm  `████████████████████` 78 ms · p95 85 ms
-- Dart is **2.29× faster**
+**`snapshot (isolated)`**
+- dart `████████████████████` 277 ms · p95 350 ms · σ 37 ms · n=10
+- npm  `████████████████░░░░` 225 ms · p95 307 ms · σ 36 ms · n=10
+- npm is **1.23× faster**
 
-**`snapshot`**
-- dart `████████████████████` 1333 ms · p95 1402 ms
-- npm  `███░░░░░░░░░░░░░░░░░` 216 ms · p95 252 ms
-- npm is **6.17× faster**
+**`snapshot (mixed)`**
+- dart `████████████████████` 296 ms · p95 365 ms · σ 35 ms · n=5
+- npm  `███████████████░░░░░` 226 ms · p95 343 ms · σ 53 ms · n=5
+- npm is **1.31× faster**
 
 **`screenshot`**
-- dart `██████████░░░░░░░░░░` 385 ms · p95 424 ms
-- npm  `████████████████████` 758 ms · p95 1025 ms
-- Dart is **1.97× faster**
+- dart `█████████░░░░░░░░░░░` 396 ms · p95 423 ms · σ 16 ms · n=5
+- npm  `████████████████████` 906 ms · p95 1475 ms · σ 256 ms · n=5
+- Dart is **2.29× faster**
 
 **`perf`**
-- dart `████████████████████` 748 ms · p95 796 ms
-- npm  `████████░░░░░░░░░░░░` 314 ms · p95 322 ms
-- npm is **2.38× faster**
+- dart `████████████████████` 1014 ms · p95 1816 ms · σ 348 ms · n=5
+- npm  `██████░░░░░░░░░░░░░░` 326 ms · p95 677 ms · σ 145 ms · n=5
+- npm is **3.11× faster**
 
 **`appstate`**
-- dart `████████████████████` 449 ms · p95 450 ms
-- npm  `████░░░░░░░░░░░░░░░░` 83 ms · p95 90 ms
-- npm is **5.41× faster**
+- dart `████████████████████` 477 ms · p95 510 ms · σ 27 ms · n=5
+- npm  `████░░░░░░░░░░░░░░░░` 96 ms · p95 165 ms · σ 28 ms · n=5
+- npm is **4.97× faster**
 
 **`press`**
-- dart `████████████████████` 2897 ms · p95 3133 ms
-- npm  `█████░░░░░░░░░░░░░░░` 661 ms · p95 44200 ms
-- npm is **4.38× faster**
+- dart `████████████████████` 904 ms · p95 1171 ms · σ 161 ms · n=5
+- npm  `████████████████░░░░` 718 ms · p95 1067 ms · σ 183 ms · n=5
+- npm is **1.26× faster**
 
 
 ## 🥶 Performance — cold costs (one-off)
 
 | Measurement | Dart | npm |
 | --- | --- | --- |
-| cold open (fresh state dir) | 572 ms | 4073 ms |
+| cold open (fresh state dir) | 930 ms | 4639 ms |
 
 > Note: this measures session bootstrap + runner launch on a fresh state dir. The first-ever native runner *compile* is cached outside the state dir and is not included.
 
