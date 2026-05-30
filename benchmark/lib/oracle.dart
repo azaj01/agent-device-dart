@@ -26,8 +26,10 @@ class Ids {
 
   // Catalog
   static const catalogFilter = 'fixture.catalog.filter_tasks_field';
+  static const catalogUrgentToggle = 'fixture.catalog.show_urgent_only_toggle';
   static const catalogVisibleCount = 'fixture.catalog.visible_tasks_text';
   static const catalogTaskReleaseChecklist = 'fixture.catalog.task.release_checklist';
+  static const catalogTaskOfflineMode = 'fixture.catalog.task.offline_mode';
   static const catalogTaskCrashRecovery = 'fixture.catalog.task.crash_recovery';
   static const taskDetailComplete = 'fixture.task_detail.mark_scenario_complete_toggle';
   static const taskDetailStatus = 'fixture.task_detail.status_text';
@@ -35,6 +37,7 @@ class Ids {
   // State Lab
   static const stateBatchCount = 'fixture.state.batch_count_text';
   static const stateIncrease = 'fixture.state.increase_batch_button';
+  static const stateDecrease = 'fixture.state.decrease_batch_button';
   static const stateReset = 'fixture.state.reset_batch_button';
 
   // Diagnostics

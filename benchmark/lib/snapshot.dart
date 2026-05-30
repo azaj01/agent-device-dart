@@ -31,10 +31,28 @@ Set<String> identifiersOf(Map<String, dynamic>? envelope) => {
         if (n['identifier'] is String) n['identifier'] as String,
     };
 
+/// The device viewport bounds, taken from the root (Application/Window) node's
+/// rect. Used to decide whether an element is actually on-screen and tappable.
+({double w, double h})? screenBounds(Map<String, dynamic>? envelope) {
+  final nodes = nodesOf(envelope);
+  if (nodes.isEmpty) return null;
+  final r = nodes.first['rect'];
+  if (r is! Map) return null;
+  final w = r['width'] as num?;
+  final h = r['height'] as num?;
+  if (w == null || h == null || w <= 0 || h <= 0) return null;
+  return (w: w.toDouble(), h: h.toDouble());
+}
+
 /// Centre point of the node identified by [id], or null if absent, rect-less,
-/// or off-screen. Off-screen elements are reported by the runner with a
-/// degenerate (zero-size) rect, so those are treated as unreachable rather than
-/// tapped at (0,0). Rect values may be `int` (npm) or `double` (Dart).
+/// or off-screen.
+///
+/// Off-screen elements are reported differently per platform: Flutter gives a
+/// degenerate (zero-size) rect, while iOS/RN gives a real rect in content
+/// coordinates that can lie beyond the viewport. Both are rejected — a
+/// zero-size rect, or a centre outside the screen bounds — so callers never tap
+/// a point that isn't actually visible (and `revealId` knows to scroll).
+/// Rect values may be `int` (npm) or `double` (Dart).
 Point? centerById(Map<String, dynamic>? envelope, String id) {
   final node = nodeById(envelope, id);
   final rect = node?['rect'];
@@ -45,7 +63,11 @@ Point? centerById(Map<String, dynamic>? envelope, String id) {
   final h = rect['height'] as num?;
   if (x == null || y == null || w == null || h == null) return null;
   if (w <= 0 || h <= 0) return null; // off-screen / not laid out
-  return (x: x.toDouble() + w.toDouble() / 2, y: y.toDouble() + h.toDouble() / 2);
+  final cx = x.toDouble() + w.toDouble() / 2;
+  final cy = y.toDouble() + h.toDouble() / 2;
+  final b = screenBounds(envelope);
+  if (b != null && (cx < 0 || cy < 0 || cx > b.w || cy > b.h)) return null; // scrolled out of view
+  return (x: cx, y: cy);
 }
 
 /// Concatenated `label` + `value` text of every node, for substring assertions

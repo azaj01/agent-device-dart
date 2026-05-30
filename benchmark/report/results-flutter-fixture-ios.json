@@ -1,7 +1,8 @@
 {
-  "platform": "android",
-  "device": "Android emulator emulator-5554",
-  "generated": "2026-05-30T10:57:19.644053Z",
+  "app": "flutter-fixture",
+  "platform": "ios",
+  "device": "iOS simulator 9046550C-D9D6-4832-AFB6-8C0D73D90285",
+  "generated": "2026-05-30T12:54:58.894389Z",
   "reps": 5,
   "versions": {
     "dart": "0.0.4",
@@ -12,53 +13,53 @@
     "latencyMs": {
       "startup (--version)": {
         "count": 5,
-        "min": 22,
-        "median": 25,
-        "p95": 35,
-        "max": 35
+        "min": 30,
+        "median": 34,
+        "p95": 45,
+        "max": 45
       },
       "snapshot": {
         "count": 5,
-        "min": 2450,
-        "median": 2485,
-        "p95": 2511,
-        "max": 2511
+        "min": 1326,
+        "median": 1333,
+        "p95": 1402,
+        "max": 1402
       },
       "screenshot": {
         "count": 5,
-        "min": 1631,
-        "median": 1670,
-        "p95": 1730,
-        "max": 1730
+        "min": 368,
+        "median": 385,
+        "p95": 424,
+        "max": 424
       },
       "perf": {
         "count": 5,
-        "min": 459,
-        "median": 604,
-        "p95": 791,
-        "max": 791
+        "min": 737,
+        "median": 748,
+        "p95": 796,
+        "max": 796
       },
       "appstate": {
         "count": 5,
-        "min": 349,
-        "median": 401,
-        "p95": 417,
-        "max": 417
+        "min": 445,
+        "median": 449,
+        "p95": 450,
+        "max": 450
       },
       "press": {
         "count": 5,
-        "min": 378,
-        "median": 495,
-        "p95": 582,
-        "max": 582
+        "min": 2878,
+        "median": 2897,
+        "p95": 3133,
+        "max": 3133
       }
     },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 2583
+      "cold open (fresh state dir)": 572
     },
     "accuracy": {
-      "passed": 11,
-      "total": 11,
+      "passed": 15,
+      "total": 15,
       "checks": [
         {
           "name": "home: fixture.home.scenario_title resolves",
@@ -86,34 +87,54 @@
           "detail": "Home snapshot should expose fixture.home.open_diagnostics_button"
         },
         {
-          "name": "form: fields resolve",
-          "pass": true,
-          "detail": "Form Lab snapshot should expose name, email and submit"
-        },
-        {
-          "name": "form: field value extracted",
-          "pass": true,
-          "detail": "The profile name field's default value should be readable from the snapshot"
-        },
-        {
           "name": "catalog: list resolves",
           "pass": true,
-          "detail": "Catalog snapshot should expose filter field and visible-count text"
+          "detail": "Catalog should expose the filter field and visible-count text"
+        },
+        {
+          "name": "catalog: search filters list",
+          "pass": true,
+          "detail": "Typing \"offline\" should leave only the Offline Mode task (before=4, after=1)"
+        },
+        {
+          "name": "catalog: urgent toggle filters list",
+          "pass": true,
+          "detail": "Urgent-only should show 2 tasks (got Visible tasks: 2)"
         },
         {
           "name": "catalog: detail navigation works",
           "pass": true,
-          "detail": "Tapping a task should open detail with the complete toggle"
+          "detail": "Tapping a task should open its detail screen"
+        },
+        {
+          "name": "catalog: mark-complete updates status",
+          "pass": true,
+          "detail": "Toggling complete should surface the status text"
+        },
+        {
+          "name": "form: fields resolve",
+          "pass": true,
+          "detail": "Form should expose name and email fields"
+        },
+        {
+          "name": "form: field value extracted",
+          "pass": true,
+          "detail": "The prefilled profile-name value should be readable from the snapshot"
         },
         {
           "name": "state: controls resolve",
           "pass": true,
-          "detail": "State Lab snapshot should expose batch count and increase button"
+          "detail": "State Lab should expose the batch count and increase button"
         },
         {
-          "name": "state: increment updates counter",
+          "name": "state: +3/-1 nets +2",
           "pass": true,
-          "detail": "Batch count should increase after two taps (before=2, after=4)"
+          "detail": "Three increments and one decrement should net +2 (start=2, net=4)"
+        },
+        {
+          "name": "state: reset zeroes counter",
+          "pass": true,
+          "detail": "Reset should return the counter to 0 (afterReset=0)"
         }
       ]
     }
@@ -123,53 +144,53 @@
     "latencyMs": {
       "startup (--version)": {
         "count": 5,
-        "min": 77,
-        "median": 79,
-        "p95": 101,
-        "max": 101
+        "min": 78,
+        "median": 78,
+        "p95": 85,
+        "max": 85
       },
       "snapshot": {
         "count": 5,
-        "min": 2141,
-        "median": 2170,
-        "p95": 2298,
-        "max": 2298
+        "min": 190,
+        "median": 216,
+        "p95": 252,
+        "max": 252
       },
       "screenshot": {
         "count": 5,
-        "min": 1387,
-        "median": 1419,
-        "p95": 1497,
-        "max": 1497
+        "min": 754,
+        "median": 758,
+        "p95": 1025,
+        "max": 1025
       },
       "perf": {
         "count": 5,
-        "min": 144,
-        "median": 149,
-        "p95": 207,
-        "max": 207
+        "min": 307,
+        "median": 314,
+        "p95": 322,
+        "max": 322
       },
       "appstate": {
         "count": 5,
-        "min": 392,
-        "median": 453,
-        "p95": 480,
-        "max": 480
+        "min": 83,
+        "median": 83,
+        "p95": 90,
+        "max": 90
       },
       "press": {
         "count": 5,
-        "min": 186,
-        "median": 190,
-        "p95": 262,
-        "max": 262
+        "min": 644,
+        "median": 661,
+        "p95": 44200,
+        "max": 44200
       }
     },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 928
+      "cold open (fresh state dir)": 4073
     },
     "accuracy": {
-      "passed": 11,
-      "total": 11,
+      "passed": 15,
+      "total": 15,
       "checks": [
         {
           "name": "home: fixture.home.scenario_title resolves",
@@ -197,34 +218,54 @@
           "detail": "Home snapshot should expose fixture.home.open_diagnostics_button"
         },
         {
-          "name": "form: fields resolve",
-          "pass": true,
-          "detail": "Form Lab snapshot should expose name, email and submit"
-        },
-        {
-          "name": "form: field value extracted",
-          "pass": true,
-          "detail": "The profile name field's default value should be readable from the snapshot"
-        },
-        {
           "name": "catalog: list resolves",
           "pass": true,
-          "detail": "Catalog snapshot should expose filter field and visible-count text"
+          "detail": "Catalog should expose the filter field and visible-count text"
+        },
+        {
+          "name": "catalog: search filters list",
+          "pass": true,
+          "detail": "Typing \"offline\" should leave only the Offline Mode task (before=4, after=1)"
+        },
+        {
+          "name": "catalog: urgent toggle filters list",
+          "pass": true,
+          "detail": "Urgent-only should show 2 tasks (got Visible tasks: 2)"
         },
         {
           "name": "catalog: detail navigation works",
           "pass": true,
-          "detail": "Tapping a task should open detail with the complete toggle"
+          "detail": "Tapping a task should open its detail screen"
+        },
+        {
+          "name": "catalog: mark-complete updates status",
+          "pass": true,
+          "detail": "Toggling complete should surface the status text"
+        },
+        {
+          "name": "form: fields resolve",
+          "pass": true,
+          "detail": "Form should expose name and email fields"
+        },
+        {
+          "name": "form: field value extracted",
+          "pass": true,
+          "detail": "The prefilled profile-name value should be readable from the snapshot"
         },
         {
           "name": "state: controls resolve",
           "pass": true,
-          "detail": "State Lab snapshot should expose batch count and increase button"
+          "detail": "State Lab should expose the batch count and increase button"
         },
         {
-          "name": "state: increment updates counter",
+          "name": "state: +3/-1 nets +2",
           "pass": true,
-          "detail": "Batch count should increase after two taps (before=2, after=4)"
+          "detail": "Three increments and one decrement should net +2 (start=2, net=4)"
+        },
+        {
+          "name": "state: reset zeroes counter",
+          "pass": true,
+          "detail": "Reset should return the counter to 0 (afterReset=0)"
         }
       ]
     }

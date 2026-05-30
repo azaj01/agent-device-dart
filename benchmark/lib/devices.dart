@@ -1,7 +1,7 @@
 import 'dart:io';
 
+import 'apps.dart';
 import 'cli_target.dart';
-import 'oracle.dart';
 
 /// Run a shell command, streaming output, and throw on non-zero exit.
 Future<void> _run(String exe, List<String> args, {String? cwd}) async {
@@ -13,12 +13,54 @@ Future<void> _run(String exe, List<String> args, {String? cwd}) async {
   }
 }
 
-/// Ensure the Flutter fixture app is built and installed on [serial].
+/// Ensure [app] is installed on [serial].
 ///
-/// Mirrors the install steps from `.github/scripts/run-fixture-*-live.sh`,
-/// including the Android stylus-handwriting workaround that otherwise corrupts
-/// `fill`/`type` on API 36+ emulators.
-Future<void> ensureFixtureInstalled({
+/// The Flutter fixture is built and installed automatically. The Expo test-app
+/// requires a heavyweight native RN build, so it is built out-of-band (see the
+/// benchmark README); here we only verify it is present and instruct otherwise.
+Future<void> ensureAppInstalled({
+  required BenchApp app,
+  required String platform,
+  required String serial,
+  required String repoRoot,
+}) async {
+  final bundleId = app.bundleId(platform);
+  if (app is FlutterFixtureApp) {
+    await _ensureFlutterFixtureInstalled(platform: platform, serial: serial, repoRoot: repoRoot);
+    // Android stylus workaround (applies to any app driven via fill/type).
+    if (platform == 'android') {
+      await Process.run(
+          'adb', ['-s', serial, 'shell', 'settings', 'put', 'secure', 'stylus_handwriting_enabled', '0']);
+    }
+    return;
+  }
+  // Expo test-app: verify installed.
+  final installed = await _isInstalled(platform, serial, bundleId);
+  if (!installed) {
+    throw StateError(
+      'App "$bundleId" is not installed on $serial.\n'
+      'Build it first (from agent-device/examples/test-app):\n'
+      '  pnpm install --ignore-workspace\n'
+      "  pnpm exec expo run:${platform == 'ios' ? 'ios' : 'android'} --configuration Release\n"
+      'then re-run the benchmark.',
+    );
+  }
+  if (platform == 'android') {
+    await Process.run(
+        'adb', ['-s', serial, 'shell', 'settings', 'put', 'secure', 'stylus_handwriting_enabled', '0']);
+  }
+}
+
+Future<bool> _isInstalled(String platform, String serial, String bundleId) async {
+  if (platform == 'ios') {
+    final r = await Process.run('xcrun', ['simctl', 'listapps', serial]);
+    return (r.stdout as String).contains(bundleId);
+  }
+  final r = await Process.run('adb', ['-s', serial, 'shell', 'pm', 'list', 'packages', bundleId]);
+  return (r.stdout as String).contains(bundleId);
+}
+
+Future<void> _ensureFlutterFixtureInstalled({
   required String platform,
   required String serial,
   required String repoRoot,
@@ -48,10 +90,10 @@ Future<void> ensureFixtureInstalled({
 /// launch). Note: this does NOT force a first-ever native runner *compile* —
 /// that is cached outside the state dir — so it is reported as a separate,
 /// best-effort cold-cost line.
-Future<int> measureColdOpen(CliTarget t) async {
+Future<int> measureColdOpen(CliTarget t, String bundleId) async {
   final dir = Directory(t.stateDir);
   if (dir.existsSync()) dir.deleteSync(recursive: true);
-  final r = await t.run(['open', fixtureAppId(t.platform)]);
+  final r = await t.run(['open', bundleId]);
   return r.durationMs;
 }
 

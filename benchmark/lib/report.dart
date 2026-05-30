@@ -15,6 +15,7 @@ String bar(num value, num max, {int width = 20}) {
 /// Render the full Markdown report and the machine-readable results.json.
 class Report {
   Report({
+    required this.app,
     required this.platform,
     required this.deviceLabel,
     required this.timestamp,
@@ -26,6 +27,7 @@ class Report {
     required this.features,
   });
 
+  final String app;
   final String platform;
   final String deviceLabel;
   final String timestamp;
@@ -139,6 +141,7 @@ class Report {
     b.writeln('# agent-device: Dart port vs npm — benchmark\n');
     b.writeln('| | |');
     b.writeln('| --- | --- |');
+    b.writeln('| Target app | `$app` |');
     b.writeln('| Platform | `$platform` |');
     b.writeln('| Device | $deviceLabel |');
     b.writeln('| Generated | $timestamp |');
@@ -169,6 +172,7 @@ class Report {
       };
 
   Map<String, dynamic> json() => {
+        'app': app,
         'platform': platform,
         'device': deviceLabel,
         'generated': timestamp,
@@ -179,10 +183,10 @@ class Report {
         'features': features.map((f) => f.toJson()).toList(),
       };
 
-  /// Write REPORT.md and results.json into [dir].
+  /// Write REPORT and results.json into [dir], tagged by app + platform.
   Future<void> write(Directory dir) async {
     dir.createSync(recursive: true);
-    final suffix = platform;
+    final suffix = '$app-$platform';
     await File('${dir.path}/REPORT-$suffix.md').writeAsString(markdown());
     await File('${dir.path}/results-$suffix.json')
         .writeAsString(const JsonEncoder.withIndent('  ').convert(json()));

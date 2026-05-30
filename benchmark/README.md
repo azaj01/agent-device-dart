@@ -36,15 +36,43 @@ envelope — it is a neutral referee that favours neither implementation.
 
 The fixture app is built and installed automatically if not already present.
 
+## Target apps
+
+Two apps can be driven via `--app` (both reached purely through accessibility):
+
+- `fixture` (default) — the Flutter fixture in `test_apps/agent_device_fixture_app`.
+  Built and installed automatically.
+- `test-app` — the Expo / React Native "Agent Device Tester" in
+  `agent-device/examples/test-app` (`com.callstack.agentdevicelab`). It needs a
+  heavyweight native RN build, so build it once out-of-band first:
+
+  ```bash
+  cd agent-device/examples/test-app
+  pnpm install --ignore-workspace
+  pnpm exec expo run:ios --configuration Release        # or: run:android
+  ```
+
+  The benchmark then verifies it is installed and drives it.
+
 ## Run
 
 ```bash
-# Android (auto-detects a single emulator, or pass --serial)
+# Flutter fixture (default app)
 dart run benchmark/bin/benchmark.dart --platform android --reps 5
-
-# iOS (auto-detects a single booted sim, or pass --udid)
 dart run benchmark/bin/benchmark.dart --platform ios --udid <UDID> --reps 5
+
+# Expo test-app (build it first, see above)
+dart run benchmark/bin/benchmark.dart --platform ios --udid <UDID> --app test-app --reps 5
 ```
+
+## Walkthrough coverage (accuracy axis)
+
+Both apps exercise navigation, **text input** (`press` to focus + `type`, since
+Dart's iOS backend has no coordinate `fill`), button sequences, toggles, and
+observable state transitions — e.g. on the Flutter fixture: catalog search
+filtering, urgent-only toggle, drill-in + mark-complete, and a `+3/-1`/reset
+counter sequence; on the test-app: empty-submit validation errors → fill +
+agree + submit → success, plus async diagnostics load.
 
 ## Output
 
