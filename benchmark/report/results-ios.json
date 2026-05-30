@@ -1,0 +1,570 @@
+{
+  "platform": "ios",
+  "device": "iOS simulator 9046550C-D9D6-4832-AFB6-8C0D73D90285",
+  "generated": "2026-05-30T10:13:12.264179Z",
+  "reps": 5,
+  "versions": {
+    "dart": "0.0.4",
+    "npm": "0.16.4"
+  },
+  "dart": {
+    "cli": "dart",
+    "latencyMs": {
+      "startup (--version)": {
+        "count": 5,
+        "min": 22,
+        "median": 27,
+        "p95": 29,
+        "max": 29
+      },
+      "snapshot": {
+        "count": 5,
+        "min": 1317,
+        "median": 1325,
+        "p95": 2571,
+        "max": 2571
+      },
+      "screenshot": {
+        "count": 5,
+        "min": 350,
+        "median": 389,
+        "p95": 419,
+        "max": 419
+      },
+      "perf": {
+        "count": 5,
+        "min": 735,
+        "median": 747,
+        "p95": 776,
+        "max": 776
+      },
+      "appstate": {
+        "count": 5,
+        "min": 426,
+        "median": 428,
+        "p95": 462,
+        "max": 462
+      },
+      "press": {
+        "count": 5,
+        "min": 2874,
+        "median": 3161,
+        "p95": 3678,
+        "max": 3678
+      }
+    },
+    "coldCostsMs": {
+      "cold open (fresh state dir)": 559
+    },
+    "accuracy": {
+      "passed": 11,
+      "total": 11,
+      "checks": [
+        {
+          "name": "home: fixture.home.scenario_title resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.scenario_title"
+        },
+        {
+          "name": "home: fixture.home.open_form_lab_button resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.open_form_lab_button"
+        },
+        {
+          "name": "home: fixture.home.open_catalog_button resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.open_catalog_button"
+        },
+        {
+          "name": "home: fixture.home.open_state_lab_button resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.open_state_lab_button"
+        },
+        {
+          "name": "home: fixture.home.open_diagnostics_button resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.open_diagnostics_button"
+        },
+        {
+          "name": "form: fields resolve",
+          "pass": true,
+          "detail": "Form Lab snapshot should expose name, email and submit"
+        },
+        {
+          "name": "form: field value extracted",
+          "pass": true,
+          "detail": "The profile name field's default value should be readable from the snapshot"
+        },
+        {
+          "name": "catalog: list resolves",
+          "pass": true,
+          "detail": "Catalog snapshot should expose filter field and visible-count text"
+        },
+        {
+          "name": "catalog: detail navigation works",
+          "pass": true,
+          "detail": "Tapping a task should open detail with the complete toggle"
+        },
+        {
+          "name": "state: controls resolve",
+          "pass": true,
+          "detail": "State Lab snapshot should expose batch count and increase button"
+        },
+        {
+          "name": "state: increment updates counter",
+          "pass": true,
+          "detail": "Batch count should increase after two taps (before=2, after=4)"
+        }
+      ]
+    }
+  },
+  "npm": {
+    "cli": "npm",
+    "latencyMs": {
+      "startup (--version)": {
+        "count": 5,
+        "min": 80,
+        "median": 82,
+        "p95": 128,
+        "max": 128
+      },
+      "snapshot": {
+        "count": 5,
+        "min": 236,
+        "median": 263,
+        "p95": 319,
+        "max": 319
+      },
+      "screenshot": {
+        "count": 5,
+        "min": 786,
+        "median": 852,
+        "p95": 1036,
+        "max": 1036
+      },
+      "perf": {
+        "count": 5,
+        "min": 309,
+        "median": 329,
+        "p95": 414,
+        "max": 414
+      },
+      "appstate": {
+        "count": 5,
+        "min": 82,
+        "median": 92,
+        "p95": 125,
+        "max": 125
+      },
+      "press": {
+        "count": 5,
+        "min": 661,
+        "median": 706,
+        "p95": 919,
+        "max": 919
+      }
+    },
+    "coldCostsMs": {
+      "cold open (fresh state dir)": 4944
+    },
+    "accuracy": {
+      "passed": 11,
+      "total": 11,
+      "checks": [
+        {
+          "name": "home: fixture.home.scenario_title resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.scenario_title"
+        },
+        {
+          "name": "home: fixture.home.open_form_lab_button resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.open_form_lab_button"
+        },
+        {
+          "name": "home: fixture.home.open_catalog_button resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.open_catalog_button"
+        },
+        {
+          "name": "home: fixture.home.open_state_lab_button resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.open_state_lab_button"
+        },
+        {
+          "name": "home: fixture.home.open_diagnostics_button resolves",
+          "pass": true,
+          "detail": "Home snapshot should expose fixture.home.open_diagnostics_button"
+        },
+        {
+          "name": "form: fields resolve",
+          "pass": true,
+          "detail": "Form Lab snapshot should expose name, email and submit"
+        },
+        {
+          "name": "form: field value extracted",
+          "pass": true,
+          "detail": "The profile name field's default value should be readable from the snapshot"
+        },
+        {
+          "name": "catalog: list resolves",
+          "pass": true,
+          "detail": "Catalog snapshot should expose filter field and visible-count text"
+        },
+        {
+          "name": "catalog: detail navigation works",
+          "pass": true,
+          "detail": "Tapping a task should open detail with the complete toggle"
+        },
+        {
+          "name": "state: controls resolve",
+          "pass": true,
+          "detail": "State Lab snapshot should expose batch count and increase button"
+        },
+        {
+          "name": "state: increment updates counter",
+          "pass": true,
+          "detail": "Batch count should increase after two taps (before=2, after=4)"
+        }
+      ]
+    }
+  },
+  "features": [
+    {
+      "name": "boot",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "open",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "close",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "install",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "uninstall",
+      "dart": true,
+      "npm": false,
+      "note": ""
+    },
+    {
+      "name": "reinstall",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "install-from-source",
+      "dart": false,
+      "npm": true,
+      "note": "npm: CI artifact install"
+    },
+    {
+      "name": "push",
+      "dart": false,
+      "npm": true,
+      "note": "push notification payloads"
+    },
+    {
+      "name": "snapshot",
+      "dart": true,
+      "npm": true,
+      "note": "core accessibility tree"
+    },
+    {
+      "name": "diff",
+      "dart": false,
+      "npm": true,
+      "note": "snapshot/screenshot diffing"
+    },
+    {
+      "name": "devices",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "apps",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "appstate",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "clipboard",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "keyboard",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "perf",
+      "dart": true,
+      "npm": true,
+      "note": "cpu/memory sampling"
+    },
+    {
+      "name": "back",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "home",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "rotate",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "app-switcher",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "wait",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "alert",
+      "dart": false,
+      "npm": true,
+      "note": "iOS/macOS alert handling"
+    },
+    {
+      "name": "click",
+      "dart": true,
+      "npm": true,
+      "note": "alias of press"
+    },
+    {
+      "name": "press",
+      "dart": true,
+      "npm": true,
+      "note": "tap by coord/ref/selector"
+    },
+    {
+      "name": "tap",
+      "dart": true,
+      "npm": false,
+      "note": "Dart: explicit coord tap"
+    },
+    {
+      "name": "get",
+      "dart": true,
+      "npm": true,
+      "note": "read text/attrs"
+    },
+    {
+      "name": "find",
+      "dart": true,
+      "npm": true,
+      "note": "contract differs (see report)"
+    },
+    {
+      "name": "is",
+      "dart": true,
+      "npm": true,
+      "note": "UI-state assertions"
+    },
+    {
+      "name": "replay",
+      "dart": true,
+      "npm": true,
+      "note": ".ad replay scripts"
+    },
+    {
+      "name": "test",
+      "dart": true,
+      "npm": true,
+      "note": ".ad test suites"
+    },
+    {
+      "name": "batch",
+      "dart": true,
+      "npm": false,
+      "note": "multi-step batch"
+    },
+    {
+      "name": "longpress",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "swipe",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "focus",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "type",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "fill",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "scroll",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "pinch",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "slider",
+      "dart": true,
+      "npm": false,
+      "note": ""
+    },
+    {
+      "name": "screenshot",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "trigger-app-event",
+      "dart": true,
+      "npm": true,
+      "note": ""
+    },
+    {
+      "name": "record",
+      "dart": true,
+      "npm": true,
+      "note": "video recording"
+    },
+    {
+      "name": "trace",
+      "dart": false,
+      "npm": true,
+      "note": "trace capture"
+    },
+    {
+      "name": "logs",
+      "dart": true,
+      "npm": true,
+      "note": "app log capture"
+    },
+    {
+      "name": "network",
+      "dart": true,
+      "npm": true,
+      "note": "HTTP traffic dump"
+    },
+    {
+      "name": "settings",
+      "dart": true,
+      "npm": true,
+      "note": "OS settings/permissions"
+    },
+    {
+      "name": "session",
+      "dart": true,
+      "npm": true,
+      "note": "session management"
+    },
+    {
+      "name": "connect",
+      "dart": false,
+      "npm": true,
+      "note": "npm: remote daemon"
+    },
+    {
+      "name": "disconnect",
+      "dart": false,
+      "npm": true,
+      "note": "npm: remote daemon"
+    },
+    {
+      "name": "auth",
+      "dart": false,
+      "npm": true,
+      "note": "npm: cloud auth"
+    },
+    {
+      "name": "metro",
+      "dart": false,
+      "npm": true,
+      "note": "npm: React Native Metro"
+    },
+    {
+      "name": "react-devtools",
+      "dart": false,
+      "npm": true,
+      "note": "npm: RN DevTools"
+    },
+    {
+      "name": "ensure-simulator",
+      "dart": false,
+      "npm": true,
+      "note": "npm: ensure sim exists"
+    },
+    {
+      "name": "runner",
+      "dart": true,
+      "npm": false,
+      "note": "Dart: runner lifecycle"
+    },
+    {
+      "name": "update",
+      "dart": true,
+      "npm": false,
+      "note": "Dart: self-update"
+    },
+    {
+      "name": "completion",
+      "dart": true,
+      "npm": false,
+      "note": "shell completion"
+    }
+  ]
+}
