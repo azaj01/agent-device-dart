@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 /// Summary statistics over a set of latency samples (milliseconds).
 class LatencyStats {
   LatencyStats({
@@ -6,6 +8,7 @@ class LatencyStats {
     required this.median,
     required this.p95,
     required this.max,
+    required this.stddev,
   });
 
   final int count;
@@ -13,17 +16,21 @@ class LatencyStats {
   final int median;
   final int p95;
   final int max;
+  final int stddev;
 
   /// Compute stats from raw samples. Returns null for an empty list.
   static LatencyStats? from(List<int> samplesIn) {
     if (samplesIn.isEmpty) return null;
     final s = [...samplesIn]..sort();
+    final mean = s.reduce((a, b) => a + b) / s.length;
+    final variance = s.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) / s.length;
     return LatencyStats(
       count: s.length,
       min: s.first,
       median: _percentile(s, 50),
       p95: _percentile(s, 95),
       max: s.last,
+      stddev: variance <= 0 ? 0 : math.sqrt(variance).round(),
     );
   }
 
@@ -40,5 +47,6 @@ class LatencyStats {
         'median': median,
         'p95': p95,
         'max': max,
+        'stddev': stddev,
       };
 }

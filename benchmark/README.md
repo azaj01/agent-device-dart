@@ -82,6 +82,30 @@ Written to `benchmark/report/` (git-ignored):
   accuracy %, and feature coverage.
 - `results-<platform>.json` — machine-readable results.
 
+## Performance gotcha: rebuild the iOS runner
+
+The biggest snapshot-latency factor we found was **not** the Dart code — it was a
+**stale cached XCUITest runner build**. The CLI auto-builds the runner once into
+`ios-runner/build/` and reuses it; it does not rebuild when the Swift source
+changes. A stale runner drove `snapshot` at ~1600 ms; rebuilding from source
+dropped it to ~440 ms (at parity with npm). The runner-internal snapshot work is
+only ~170–230 ms — the rest is transport/process overhead.
+
+If Dart snapshots look slow, rebuild the runner first:
+
+```bash
+make build-ios-runner            # booted simulator
+make build-ios-runner UDID=<id>  # specific simulator
+```
+
+Measurement notes baked into this harness so the comparison stays honest:
+
+- Latency is recorded **only for successful** invocations (a fast-failing command
+  must never count as a fast call), with failures reported separately.
+- `snapshot (isolated)` fires back-to-back after a warm-up (no interleaved
+  commands invalidating the runner's accessibility cache); `snapshot (mixed)`
+  reflects a realistic loop. Each row reports median, p95, σ, and n.
+
 ## Notes & caveats
 
 - Each CLI runs its full suite back-to-back on the same device; the device is

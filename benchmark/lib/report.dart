@@ -50,10 +50,12 @@ class Report {
       final maxMed = [ds?.median ?? 0, ns?.median ?? 0].reduce((a, c) => a > c ? a : c);
       b.writeln('**`$label`**');
       if (ds != null) {
-        b.writeln('- dart `${bar(ds.median, maxMed)}` ${ds.median} ms · p95 ${ds.p95} ms');
+        b.writeln('- dart `${bar(ds.median, maxMed)}` ${ds.median} ms '
+            '· p95 ${ds.p95} ms · σ ${ds.stddev} ms · n=${ds.count}${_fail(dart, label)}');
       }
       if (ns != null) {
-        b.writeln('- npm  `${bar(ns.median, maxMed)}` ${ns.median} ms · p95 ${ns.p95} ms');
+        b.writeln('- npm  `${bar(ns.median, maxMed)}` ${ns.median} ms '
+            '· p95 ${ns.p95} ms · σ ${ns.stddev} ms · n=${ns.count}${_fail(npm, label)}');
       }
       if (ds != null && ns != null && ds.median > 0 && ns.median > 0) {
         b.writeln('- ${_speedup(ds.median, ns.median)}');
@@ -61,6 +63,11 @@ class Report {
       b.writeln();
     }
     return b.toString();
+  }
+
+  String _fail(CliRun run, String label) {
+    final f = run.failures[label] ?? 0;
+    return f > 0 ? ' · ⚠️ $f failed' : '';
   }
 
   String _speedup(int dartMs, int npmMs) {
@@ -163,6 +170,7 @@ class Report {
         'latencyMs': {
           for (final e in run.latency.entries) e.key: LatencyStats.from(e.value)?.toJson(),
         },
+        'failures': run.failures,
         'coldCostsMs': run.coldCosts,
         'accuracy': {
           'passed': run.passCount,

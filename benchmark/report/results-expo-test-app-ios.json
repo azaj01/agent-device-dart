@@ -2,7 +2,7 @@
   "app": "expo-test-app",
   "platform": "ios",
   "device": "iOS simulator 9046550C-D9D6-4832-AFB6-8C0D73D90285",
-  "generated": "2026-05-30T12:50:15.917010Z",
+  "generated": "2026-05-30T14:20:32.849798Z",
   "reps": 5,
   "versions": {
     "dart": "0.0.4",
@@ -11,54 +11,63 @@
   "dart": {
     "cli": "dart",
     "latencyMs": {
-      "startup (--version)": {
-        "count": 5,
-        "min": 34,
-        "median": 34,
-        "p95": 40,
-        "max": 40
+      "snapshot (isolated)": {
+        "count": 10,
+        "min": 472,
+        "median": 579,
+        "p95": 659,
+        "max": 659,
+        "stddev": 63
       },
-      "snapshot": {
+      "snapshot (mixed)": {
         "count": 5,
-        "min": 1506,
-        "median": 1547,
-        "p95": 1660,
-        "max": 1660
+        "min": 461,
+        "median": 483,
+        "p95": 554,
+        "max": 554,
+        "stddev": 34
       },
       "screenshot": {
         "count": 5,
-        "min": 379,
-        "median": 423,
-        "p95": 433,
-        "max": 433
+        "min": 361,
+        "median": 431,
+        "p95": 587,
+        "max": 587,
+        "stddev": 76
       },
       "perf": {
         "count": 5,
-        "min": 760,
-        "median": 796,
-        "p95": 1260,
-        "max": 1260
+        "min": 750,
+        "median": 754,
+        "p95": 2173,
+        "max": 2173,
+        "stddev": 567
       },
       "appstate": {
         "count": 5,
-        "min": 481,
-        "median": 487,
-        "p95": 512,
-        "max": 512
+        "min": 440,
+        "median": 450,
+        "p95": 583,
+        "max": 583,
+        "stddev": 55
       },
       "press": {
         "count": 5,
-        "min": 3121,
-        "median": 3172,
-        "p95": 3405,
-        "max": 3405
+        "min": 1014,
+        "median": 1036,
+        "p95": 1599,
+        "max": 1599,
+        "stddev": 222
       }
     },
+    "failures": {
+      "startup (--version)": 5
+    },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 566
+      "cold open (fresh state dir)": 536
     },
     "accuracy": {
-      "passed": 9,
+      "passed": 8,
       "total": 9,
       "checks": [
         {
@@ -89,11 +98,11 @@
         {
           "name": "form: text input registered",
           "pass": true,
-          "detail": "Typed text should populate the fields (name=\"Full name Ada\", email=\"Email aa@example.com\")"
+          "detail": "Typed text should populate the fields (name=\"Full name A\", email=\"Email aa@example.com\")"
         },
         {
           "name": "form: scroll reveals below-fold submit button",
-          "pass": true,
+          "pass": false,
           "detail": "`scroll` should bring the off-screen submit button into view"
         },
         {
@@ -112,51 +121,60 @@
   "npm": {
     "cli": "npm",
     "latencyMs": {
-      "startup (--version)": {
-        "count": 5,
-        "min": 81,
-        "median": 89,
-        "p95": 102,
-        "max": 102
+      "snapshot (isolated)": {
+        "count": 10,
+        "min": 352,
+        "median": 367,
+        "p95": 399,
+        "max": 399,
+        "stddev": 12
       },
-      "snapshot": {
+      "snapshot (mixed)": {
         "count": 5,
-        "min": 371,
-        "median": 398,
-        "p95": 45443,
-        "max": 45443
+        "min": 372,
+        "median": 377,
+        "p95": 383,
+        "max": 383,
+        "stddev": 4
       },
       "screenshot": {
         "count": 5,
-        "min": 761,
-        "median": 780,
-        "p95": 856,
-        "max": 856
+        "min": 726,
+        "median": 759,
+        "p95": 770,
+        "max": 770,
+        "stddev": 16
       },
       "perf": {
         "count": 5,
-        "min": 305,
-        "median": 315,
-        "p95": 321,
-        "max": 321
+        "min": 299,
+        "median": 304,
+        "p95": 307,
+        "max": 307,
+        "stddev": 3
       },
       "appstate": {
         "count": 5,
-        "min": 83,
-        "median": 85,
-        "p95": 87,
-        "max": 87
+        "min": 81,
+        "median": 83,
+        "p95": 88,
+        "max": 88,
+        "stddev": 3
       },
       "press": {
         "count": 5,
-        "min": 806,
-        "median": 813,
-        "p95": 1085,
-        "max": 1085
+        "min": 807,
+        "median": 856,
+        "p95": 1107,
+        "max": 1107,
+        "stddev": 128
       }
     },
+    "failures": {
+      "startup (--version)": 5
+    },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 4285
+      "cold open (fresh state dir)": 4062
     },
     "accuracy": {
       "passed": 8,
@@ -180,7 +198,7 @@
         {
           "name": "catalog: search accepts text input",
           "pass": true,
-          "detail": "Typing into the search field should populate it (value=\"Search products crus\")"
+          "detail": "Typing into the search field should populate it (value=\"Search products citrus\")"
         },
         {
           "name": "form: fields resolve",
@@ -190,7 +208,7 @@
         {
           "name": "form: text input registered",
           "pass": true,
-          "detail": "Typed text should populate the fields (name=\"Full name A\", email=\"Email a@example.com\")"
+          "detail": "Typed text should populate the fields (name=\"Full name A\", email=\"Email aa@example.com\")"
         },
         {
           "name": "form: scroll reveals below-fold submit button",

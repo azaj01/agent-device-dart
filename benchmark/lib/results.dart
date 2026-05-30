@@ -24,7 +24,12 @@ class CliRun {
   final String platform;
 
   /// Steady-state latency samples, keyed by command label (multiple reps each).
+  /// Only successful invocations are recorded — a fast-failing command must not
+  /// pollute the latency medians (a flaw an earlier version of this harness had).
   final Map<String, List<int>> latency = {};
+
+  /// Count of failed (non-success) invocations per label, for transparency.
+  final Map<String, int> failures = {};
 
   /// One-off cold-cost measurements (process startup, first open).
   final Map<String, int> coldCosts = {};
@@ -33,6 +38,8 @@ class CliRun {
   final List<Check> checks = [];
 
   void addLatency(String label, int ms) => latency.putIfAbsent(label, () => []).add(ms);
+
+  void recordFailure(String label) => failures[label] = (failures[label] ?? 0) + 1;
 
   int get passCount => checks.where((c) => c.pass).length;
   int get totalChecks => checks.length;
