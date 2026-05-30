@@ -305,7 +305,9 @@ class IosRunnerClient {
 
     // 3) Build (source changed, schema/version bumped, products missing, or
     // first run), then record the cache so later runs can reuse it.
-    final progress = logger.progress('[runner] building iOS runner');
+    // Progress to stderr — stdout is reserved for the command's (often --json)
+    // result and must not be polluted with build chatter.
+    logger.stderr('[runner] building iOS runner…');
     final result = await runCmd('xcodebuild', [
       'build-for-testing',
       '-project',
@@ -319,7 +321,6 @@ class IosRunnerClient {
       '-quiet',
     ], const ExecOptions(allowFailure: true));
     if (result.exitCode != 0) {
-      progress.finish(showTiming: true);
       throw AppError(
         AppErrorCodes.commandFailed,
         'Auto-build of iOS runner failed (exit ${result.exitCode}).',
@@ -329,7 +330,6 @@ class IosRunnerClient {
         },
       );
     }
-    progress.finish(showTiming: true);
     final template = findXctestrun(managedProductsDir, kind: kind);
     if (runnerSourceRoot != null && kind != IosRunnerKind.device) {
       RunnerBuildCache.writeFresh(

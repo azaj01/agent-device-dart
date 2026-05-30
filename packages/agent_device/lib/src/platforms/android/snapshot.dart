@@ -200,7 +200,8 @@ _captureAndroidUiHierarchyOnce(
         timeoutMs: _helperInstallTimeoutMs,
       );
       if (install.installed) {
-        logger.stdout(
+        // stderr, not stdout: stdout carries the (often --json) snapshot result.
+        logger.stderr(
           '[snapshot] installed Android snapshot helper APK '
           '(${artifact.manifest.packageName} v${artifact.manifest.versionCode}, '
           'reason: ${install.reason})',
