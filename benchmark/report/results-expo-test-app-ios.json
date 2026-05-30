@@ -2,7 +2,7 @@
   "app": "expo-test-app",
   "platform": "ios",
   "device": "iOS simulator 9046550C-D9D6-4832-AFB6-8C0D73D90285",
-  "generated": "2026-05-30T15:10:47.367052Z",
+  "generated": "2026-05-30T18:43:32.033574Z",
   "reps": 5,
   "versions": {
     "dart": "0.0.4",
@@ -13,62 +13,62 @@
     "latencyMs": {
       "snapshot (isolated)": {
         "count": 10,
-        "min": 415,
-        "median": 464,
-        "p95": 556,
-        "max": 556,
-        "stddev": 50
+        "min": 279,
+        "median": 301,
+        "p95": 454,
+        "max": 454,
+        "stddev": 52
       },
       "snapshot (mixed)": {
         "count": 5,
-        "min": 421,
-        "median": 474,
-        "p95": 548,
-        "max": 548,
-        "stddev": 43
+        "min": 285,
+        "median": 294,
+        "p95": 366,
+        "max": 366,
+        "stddev": 32
       },
       "screenshot": {
         "count": 5,
-        "min": 345,
-        "median": 383,
-        "p95": 473,
-        "max": 473,
-        "stddev": 45
+        "min": 231,
+        "median": 261,
+        "p95": 393,
+        "max": 393,
+        "stddev": 59
       },
       "perf": {
         "count": 5,
-        "min": 753,
-        "median": 764,
-        "p95": 1145,
-        "max": 1145,
-        "stddev": 153
+        "min": 588,
+        "median": 708,
+        "p95": 1093,
+        "max": 1093,
+        "stddev": 189
       },
       "appstate": {
         "count": 5,
-        "min": 429,
-        "median": 459,
-        "p95": 707,
-        "max": 707,
-        "stddev": 104
+        "min": 283,
+        "median": 294,
+        "p95": 548,
+        "max": 548,
+        "stddev": 102
       },
       "press": {
         "count": 5,
-        "min": 1019,
-        "median": 1082,
-        "p95": 1321,
-        "max": 1321,
-        "stddev": 110
+        "min": 867,
+        "median": 867,
+        "p95": 1194,
+        "max": 1194,
+        "stddev": 130
       }
     },
     "failures": {
       "startup (--version)": 5
     },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 592
+      "cold open (fresh state dir)": 304
     },
     "accuracy": {
-      "passed": 8,
-      "total": 9,
+      "passed": 20,
+      "total": 21,
       "checks": [
         {
           "name": "home: home-title resolves",
@@ -88,7 +88,7 @@
         {
           "name": "catalog: search accepts text input",
           "pass": true,
-          "detail": "Typing into the search field should populate it (value=\"Search products crus\")"
+          "detail": "Typing into the search field should populate it (value=\"Search products citrus\")"
         },
         {
           "name": "form: fields resolve",
@@ -98,11 +98,11 @@
         {
           "name": "form: text input registered",
           "pass": true,
-          "detail": "Typed text should populate the fields (name=\"Full name Ada\", email=\"Email a@example.com\")"
+          "detail": "Typed text should populate the fields (name=\"Full name A\", email=\"Email aa@example.com\")"
         },
         {
           "name": "form: scroll reveals below-fold submit button",
-          "pass": false,
+          "pass": true,
           "detail": "`scroll` should bring the off-screen submit button into view"
         },
         {
@@ -114,6 +114,66 @@
           "name": "settings: diagnostics load resolves",
           "pass": true,
           "detail": "Loading diagnostics should reach a ready/error state"
+        },
+        {
+          "name": "nav: Home→Catalog confirmed",
+          "pass": true,
+          "detail": "catalog-title should appear and home-title should be gone"
+        },
+        {
+          "name": "nav: Catalog→Product confirmed",
+          "pass": true,
+          "detail": "product-title should appear and catalog-title should be gone"
+        },
+        {
+          "name": "nav: Product→Catalog (back) confirmed",
+          "pass": true,
+          "detail": "catalog-title should appear and product-title should be gone"
+        },
+        {
+          "name": "nav: Catalog→Form confirmed",
+          "pass": true,
+          "detail": "form-title should appear and catalog-title should be gone"
+        },
+        {
+          "name": "nav: Form→Settings confirmed",
+          "pass": true,
+          "detail": "settings-title should appear and form-title should be gone"
+        },
+        {
+          "name": "nav: Settings→Home confirmed",
+          "pass": true,
+          "detail": "home-title should appear and settings-title should be gone"
+        },
+        {
+          "name": "gesture: pan moves target",
+          "pass": true,
+          "detail": "Pan should change the x offset (got \"x 72, y 0, scale 1.00, rotate 0\")"
+        },
+        {
+          "name": "gesture: rotate registers",
+          "pass": true,
+          "detail": "Rotate should set rotate-changed (got \"pan changed yes, pinch changed no, rotate changed yes\")"
+        },
+        {
+          "name": "gesture: fling registers",
+          "pass": true,
+          "detail": "Fling should increment the fling counter (before=0, after=1)"
+        },
+        {
+          "name": "numeric: quantity stepper +2/−1",
+          "pass": true,
+          "detail": "Quantity should net +1 (start=1, end=2)"
+        },
+        {
+          "name": "longlist: scroll moves the long list",
+          "pass": true,
+          "detail": "Scrolling should move the long catalog (footer y 4262.33349609375 → 3899.33349609375)"
+        },
+        {
+          "name": "wait: text-wait command (npm grammar)",
+          "pass": false,
+          "detail": "wait <text> <timeout> blocks until the async result (npm); Dart uses a different wait grammar"
         }
       ]
     }
@@ -123,62 +183,62 @@
     "latencyMs": {
       "snapshot (isolated)": {
         "count": 10,
-        "min": 356,
-        "median": 364,
-        "p95": 372,
-        "max": 372,
-        "stddev": 5
+        "min": 369,
+        "median": 405,
+        "p95": 458,
+        "max": 458,
+        "stddev": 29
       },
       "snapshot (mixed)": {
         "count": 5,
-        "min": 369,
-        "median": 382,
-        "p95": 397,
-        "max": 397,
-        "stddev": 11
+        "min": 379,
+        "median": 411,
+        "p95": 499,
+        "max": 499,
+        "stddev": 45
       },
       "screenshot": {
         "count": 5,
-        "min": 735,
-        "median": 752,
-        "p95": 815,
-        "max": 815,
-        "stddev": 27
+        "min": 766,
+        "median": 919,
+        "p95": 1048,
+        "max": 1048,
+        "stddev": 99
       },
       "perf": {
         "count": 5,
-        "min": 296,
-        "median": 305,
-        "p95": 351,
-        "max": 351,
-        "stddev": 20
+        "min": 314,
+        "median": 361,
+        "p95": 455,
+        "max": 455,
+        "stddev": 48
       },
       "appstate": {
         "count": 5,
-        "min": 81,
-        "median": 83,
-        "p95": 88,
-        "max": 88,
-        "stddev": 2
+        "min": 83,
+        "median": 89,
+        "p95": 100,
+        "max": 100,
+        "stddev": 6
       },
       "press": {
         "count": 5,
-        "min": 805,
-        "median": 838,
-        "p95": 1084,
-        "max": 1084,
-        "stddev": 129
+        "min": 815,
+        "median": 824,
+        "p95": 50945,
+        "max": 50945,
+        "stddev": 20047
       }
     },
     "failures": {
       "startup (--version)": 5
     },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 4533
+      "cold open (fresh state dir)": 6262
     },
     "accuracy": {
-      "passed": 8,
-      "total": 9,
+      "passed": 16,
+      "total": 21,
       "checks": [
         {
           "name": "home: home-title resolves",
@@ -208,7 +268,7 @@
         {
           "name": "form: text input registered",
           "pass": true,
-          "detail": "Typed text should populate the fields (name=\"Full name Ada\", email=\"Email a@example.com\")"
+          "detail": "Typed text should populate the fields (name=\"Full name A\", email=\"Email a@example.com\")"
         },
         {
           "name": "form: scroll reveals below-fold submit button",
@@ -224,6 +284,66 @@
           "name": "settings: diagnostics load resolves",
           "pass": true,
           "detail": "Loading diagnostics should reach a ready/error state"
+        },
+        {
+          "name": "nav: Home→Catalog confirmed",
+          "pass": true,
+          "detail": "catalog-title should appear and home-title should be gone"
+        },
+        {
+          "name": "nav: Catalog→Product confirmed",
+          "pass": true,
+          "detail": "product-title should appear and catalog-title should be gone"
+        },
+        {
+          "name": "nav: Product→Catalog (back) confirmed",
+          "pass": true,
+          "detail": "catalog-title should appear and product-title should be gone"
+        },
+        {
+          "name": "nav: Catalog→Form confirmed",
+          "pass": true,
+          "detail": "form-title should appear and catalog-title should be gone"
+        },
+        {
+          "name": "nav: Form→Settings confirmed",
+          "pass": true,
+          "detail": "settings-title should appear and form-title should be gone"
+        },
+        {
+          "name": "nav: Settings→Home confirmed",
+          "pass": true,
+          "detail": "home-title should appear and settings-title should be gone"
+        },
+        {
+          "name": "gesture: pan moves target",
+          "pass": false,
+          "detail": "Pan should change the x offset (got \"x 0, y 0, scale 1.00, rotate 0\")"
+        },
+        {
+          "name": "gesture: rotate registers",
+          "pass": false,
+          "detail": "Rotate should set rotate-changed (got \"pan changed no, pinch changed no, rotate changed no\")"
+        },
+        {
+          "name": "gesture: fling registers",
+          "pass": false,
+          "detail": "Fling should increment the fling counter (before=0, after=0)"
+        },
+        {
+          "name": "numeric: quantity stepper +2/−1",
+          "pass": true,
+          "detail": "Quantity should net +1 (start=1, end=2)"
+        },
+        {
+          "name": "longlist: scroll moves the long list",
+          "pass": false,
+          "detail": "Scrolling should move the long catalog (footer y 4262.33349609375 → 4262.33349609375)"
+        },
+        {
+          "name": "wait: text-wait command (npm grammar)",
+          "pass": true,
+          "detail": "wait <text> <timeout> blocks until the async result (npm); Dart uses a different wait grammar"
         }
       ]
     }

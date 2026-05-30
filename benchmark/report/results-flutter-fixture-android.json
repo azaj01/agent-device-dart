@@ -2,7 +2,7 @@
   "app": "flutter-fixture",
   "platform": "android",
   "device": "Android emulator emulator-5554",
-  "generated": "2026-05-30T15:28:56.250314Z",
+  "generated": "2026-05-30T18:54:48.861206Z",
   "reps": 5,
   "versions": {
     "dart": "0.0.4",
@@ -12,63 +12,64 @@
     "cli": "dart",
     "latencyMs": {
       "snapshot (isolated)": {
-        "count": 10,
-        "min": 2355,
-        "median": 2402,
-        "p95": 2473,
-        "max": 2473,
-        "stddev": 32
+        "count": 8,
+        "min": 4025,
+        "median": 5506,
+        "p95": 6761,
+        "max": 6761,
+        "stddev": 956
       },
       "snapshot (mixed)": {
         "count": 5,
-        "min": 2376,
-        "median": 2411,
-        "p95": 2444,
-        "max": 2444,
-        "stddev": 22
+        "min": 2838,
+        "median": 4305,
+        "p95": 6265,
+        "max": 6265,
+        "stddev": 1316
       },
       "screenshot": {
         "count": 5,
-        "min": 1582,
-        "median": 1637,
-        "p95": 1663,
-        "max": 1663,
-        "stddev": 31
+        "min": 2363,
+        "median": 4818,
+        "p95": 5978,
+        "max": 5978,
+        "stddev": 1469
       },
       "perf": {
         "count": 5,
-        "min": 407,
-        "median": 446,
-        "p95": 534,
-        "max": 534,
-        "stddev": 42
+        "min": 1051,
+        "median": 1420,
+        "p95": 6650,
+        "max": 6650,
+        "stddev": 2120
       },
       "appstate": {
         "count": 5,
-        "min": 351,
-        "median": 353,
-        "p95": 382,
-        "max": 382,
-        "stddev": 13
+        "min": 468,
+        "median": 824,
+        "p95": 2996,
+        "max": 2996,
+        "stddev": 1116
       },
       "press": {
         "count": 5,
-        "min": 419,
-        "median": 457,
-        "p95": 572,
-        "max": 572,
-        "stddev": 54
+        "min": 492,
+        "median": 1175,
+        "p95": 1476,
+        "max": 1476,
+        "stddev": 384
       }
     },
     "failures": {
-      "startup (--version)": 5
+      "startup (--version)": 5,
+      "snapshot (isolated)": 2
     },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 2631
+      "cold open (fresh state dir)": 22272
     },
     "accuracy": {
-      "passed": 15,
-      "total": 15,
+      "passed": 19,
+      "total": 20,
       "checks": [
         {
           "name": "home: fixture.home.scenario_title resolves",
@@ -144,6 +145,31 @@
           "name": "state: reset zeroes counter",
           "pass": true,
           "detail": "Reset should return the counter to 0 (afterReset=0)"
+        },
+        {
+          "name": "nav: Home→Catalog confirmed",
+          "pass": true,
+          "detail": "Catalog should appear and Home should be gone"
+        },
+        {
+          "name": "nav: Catalog→Detail confirmed",
+          "pass": true,
+          "detail": "Task detail should appear and the catalog list should be gone"
+        },
+        {
+          "name": "nav: Detail→Catalog (back) confirmed",
+          "pass": true,
+          "detail": "Back should return to the catalog list"
+        },
+        {
+          "name": "nav: Catalog→Home (back) confirmed",
+          "pass": true,
+          "detail": "Back should return to Home"
+        },
+        {
+          "name": "diff: snapshot diff supported",
+          "pass": false,
+          "detail": "diff snapshot should report what changed (npm); Dart lacks the command"
         }
       ]
     }
@@ -153,62 +179,62 @@
     "latencyMs": {
       "snapshot (isolated)": {
         "count": 10,
-        "min": 2107,
-        "median": 2131,
-        "p95": 2159,
-        "max": 2159,
-        "stddev": 15
+        "min": 2149,
+        "median": 2320,
+        "p95": 2630,
+        "max": 2630,
+        "stddev": 152
       },
       "snapshot (mixed)": {
         "count": 5,
-        "min": 2100,
-        "median": 2126,
-        "p95": 2158,
-        "max": 2158,
-        "stddev": 19
+        "min": 2143,
+        "median": 2146,
+        "p95": 2290,
+        "max": 2290,
+        "stddev": 57
       },
       "screenshot": {
         "count": 5,
-        "min": 1376,
-        "median": 1401,
-        "p95": 1412,
-        "max": 1412,
-        "stddev": 13
+        "min": 1368,
+        "median": 1466,
+        "p95": 1671,
+        "max": 1671,
+        "stddev": 108
       },
       "perf": {
         "count": 5,
         "min": 138,
-        "median": 157,
-        "p95": 186,
-        "max": 186,
-        "stddev": 16
+        "median": 184,
+        "p95": 438,
+        "max": 438,
+        "stddev": 110
       },
       "appstate": {
         "count": 5,
-        "min": 428,
-        "median": 451,
-        "p95": 478,
-        "max": 478,
-        "stddev": 19
+        "min": 424,
+        "median": 459,
+        "p95": 519,
+        "max": 519,
+        "stddev": 39
       },
       "press": {
         "count": 5,
-        "min": 172,
-        "median": 181,
-        "p95": 201,
-        "max": 201,
-        "stddev": 10
+        "min": 171,
+        "median": 186,
+        "p95": 232,
+        "max": 232,
+        "stddev": 26
       }
     },
     "failures": {
       "startup (--version)": 5
     },
     "coldCostsMs": {
-      "cold open (fresh state dir)": 780
+      "cold open (fresh state dir)": 945
     },
     "accuracy": {
-      "passed": 15,
-      "total": 15,
+      "passed": 20,
+      "total": 20,
       "checks": [
         {
           "name": "home: fixture.home.scenario_title resolves",
@@ -284,6 +310,31 @@
           "name": "state: reset zeroes counter",
           "pass": true,
           "detail": "Reset should return the counter to 0 (afterReset=0)"
+        },
+        {
+          "name": "nav: Home→Catalog confirmed",
+          "pass": true,
+          "detail": "Catalog should appear and Home should be gone"
+        },
+        {
+          "name": "nav: Catalog→Detail confirmed",
+          "pass": true,
+          "detail": "Task detail should appear and the catalog list should be gone"
+        },
+        {
+          "name": "nav: Detail→Catalog (back) confirmed",
+          "pass": true,
+          "detail": "Back should return to the catalog list"
+        },
+        {
+          "name": "nav: Catalog→Home (back) confirmed",
+          "pass": true,
+          "detail": "Back should return to Home"
+        },
+        {
+          "name": "diff: snapshot diff supported",
+          "pass": true,
+          "detail": "diff snapshot should report what changed (npm); Dart lacks the command"
         }
       ]
     }
