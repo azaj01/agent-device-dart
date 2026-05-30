@@ -6,3 +6,4 @@ environment:
 
 workspace:
   - packages/agent_device
+  - benchmark
