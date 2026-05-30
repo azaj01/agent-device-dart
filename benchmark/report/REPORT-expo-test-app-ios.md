@@ -5,7 +5,7 @@
 | Target app | `expo-test-app` |
 | Platform | `ios` |
 | Device | iOS simulator 9046550C-D9D6-4832-AFB6-8C0D73D90285 |
-| Generated | 2026-05-30T14:20:32.849798Z |
+| Generated | 2026-05-30T18:43:32.033574Z |
 | Reps (perf) | 5 |
 | Dart binary | `0.0.4` |
 | npm CLI | `0.16.4` |
@@ -17,41 +17,41 @@ Both CLIs drive the **same** Flutter fixture app on the **same** device through 
 Median of 5 reps on the Home screen, same booted device, run back-to-back. Lower is better; bars scale to the slower CLI per row.
 
 **`snapshot (isolated)`**
-- dart `████████████████████` 579 ms · p95 659 ms · σ 63 ms · n=10
-- npm  `█████████████░░░░░░░` 367 ms · p95 399 ms · σ 12 ms · n=10
-- npm is **1.58× faster**
+- dart `███████████████░░░░░` 301 ms · p95 454 ms · σ 52 ms · n=10
+- npm  `████████████████████` 405 ms · p95 458 ms · σ 29 ms · n=10
+- Dart is **1.35× faster**
 
 **`snapshot (mixed)`**
-- dart `████████████████████` 483 ms · p95 554 ms · σ 34 ms · n=5
-- npm  `████████████████░░░░` 377 ms · p95 383 ms · σ 4 ms · n=5
-- npm is **1.28× faster**
+- dart `██████████████░░░░░░` 294 ms · p95 366 ms · σ 32 ms · n=5
+- npm  `████████████████████` 411 ms · p95 499 ms · σ 45 ms · n=5
+- Dart is **1.40× faster**
 
 **`screenshot`**
-- dart `███████████░░░░░░░░░` 431 ms · p95 587 ms · σ 76 ms · n=5
-- npm  `████████████████████` 759 ms · p95 770 ms · σ 16 ms · n=5
-- Dart is **1.76× faster**
+- dart `██████░░░░░░░░░░░░░░` 261 ms · p95 393 ms · σ 59 ms · n=5
+- npm  `████████████████████` 919 ms · p95 1048 ms · σ 99 ms · n=5
+- Dart is **3.52× faster**
 
 **`perf`**
-- dart `████████████████████` 754 ms · p95 2173 ms · σ 567 ms · n=5
-- npm  `████████░░░░░░░░░░░░` 304 ms · p95 307 ms · σ 3 ms · n=5
-- npm is **2.48× faster**
+- dart `████████████████████` 708 ms · p95 1093 ms · σ 189 ms · n=5
+- npm  `██████████░░░░░░░░░░` 361 ms · p95 455 ms · σ 48 ms · n=5
+- npm is **1.96× faster**
 
 **`appstate`**
-- dart `████████████████████` 450 ms · p95 583 ms · σ 55 ms · n=5
-- npm  `████░░░░░░░░░░░░░░░░` 83 ms · p95 88 ms · σ 3 ms · n=5
-- npm is **5.42× faster**
+- dart `████████████████████` 294 ms · p95 548 ms · σ 102 ms · n=5
+- npm  `██████░░░░░░░░░░░░░░` 89 ms · p95 100 ms · σ 6 ms · n=5
+- npm is **3.30× faster**
 
 **`press`**
-- dart `████████████████████` 1036 ms · p95 1599 ms · σ 222 ms · n=5
-- npm  `█████████████████░░░` 856 ms · p95 1107 ms · σ 128 ms · n=5
-- npm is **1.21× faster**
+- dart `████████████████████` 867 ms · p95 1194 ms · σ 130 ms · n=5
+- npm  `███████████████████░` 824 ms · p95 50945 ms · σ 20047 ms · n=5
+- npm is **1.05× faster**
 
 
 ## 🥶 Performance — cold costs (one-off)
 
 | Measurement | Dart | npm |
 | --- | --- | --- |
-| cold open (fresh state dir) | 536 ms | 4062 ms |
+| cold open (fresh state dir) | 304 ms | 6262 ms |
 
 > Note: this measures session bootstrap + runner launch on a fresh state dir. The first-ever native runner *compile* is cached outside the state dir and is not included.
 
@@ -60,16 +60,20 @@ Median of 5 reps on the Home screen, same booted device, run back-to-back. Lower
 
 Identical command stream against the fixture oracle. Both CLIs are expected to reach parity; any miss is a flagged divergence.
 
-- **Dart**: 8/9 `██████████████████░░` 89%
-- **npm**: 8/9 `██████████████████░░` 89%
+- **Dart**: 20/21 `███████████████████░` 95%
+- **npm**: 16/21 `███████████████░░░░░` 76%
 
 ### Divergences
 
 **Dart failures:**
-- ❌ form: scroll reveals below-fold submit button — `scroll` should bring the off-screen submit button into view
+- ❌ wait: text-wait command (npm grammar) — wait <text> <timeout> blocks until the async result (npm); Dart uses a different wait grammar
 
 **npm failures:**
 - ❌ form: scroll reveals below-fold submit button — `scroll` should bring the off-screen submit button into view
+- ❌ gesture: pan moves target — Pan should change the x offset (got "x 0, y 0, scale 1.00, rotate 0")
+- ❌ gesture: rotate registers — Rotate should set rotate-changed (got "pan changed no, pinch changed no, rotate changed no")
+- ❌ gesture: fling registers — Fling should increment the fling counter (before=0, after=0)
+- ❌ longlist: scroll moves the long list — Scrolling should move the long catalog (footer y 4262.33349609375 → 4262.33349609375)
 
 
 ## 🧩 Feature set — command parity

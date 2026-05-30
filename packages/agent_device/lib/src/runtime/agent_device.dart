@@ -89,29 +89,45 @@ class AgentDevice {
     CommandClock clock = const SystemClock(),
   }) async {
     final store = sessions ?? createMemorySessionStore();
-    final devices = await backend.listDevices(
-      BackendCommandContext(session: sessionName),
-      selector.platform == null
-          ? null
-          : BackendDeviceFilter(
-              platform: _toBackendPlatform(selector.platform!),
-            ),
-    );
-    final filtered = devices.where(selector._matches).toList();
-    if (filtered.isEmpty) {
-      throw AppError(
-        AppErrorCodes.deviceNotFound,
-        'No device matches the selector',
-        details: {
-          if (selector.platform != null)
-            'platform': platformSelectorToString(selector.platform!),
-          if (selector.serial != null) 'serial': selector.serial,
-          if (selector.name != null) 'name': selector.name,
-          'available': devices.map((d) => d.id).toList(),
-        },
+    final BackendDeviceInfo picked;
+    if (selector.serial != null && selector.platform != null) {
+      // Fast path: the caller pinned an exact device by serial + platform, so
+      // address it directly instead of enumerating. Enumeration is expensive
+      // per command — Android runs `adb devices -l` plus per-device `getprop`
+      // probes (~300ms, and slower with a physical device attached over USB),
+      // and iOS shells out to `simctl list`. Commands only need the serial
+      // (they address the device by `ctx.deviceSerial`); a wrong serial still
+      // surfaces a clear error at command time.
+      picked = BackendDeviceInfo(
+        id: selector.serial!,
+        name: selector.serial!,
+        platform: _toBackendPlatform(selector.platform!),
       );
+    } else {
+      final devices = await backend.listDevices(
+        BackendCommandContext(session: sessionName),
+        selector.platform == null
+            ? null
+            : BackendDeviceFilter(
+                platform: _toBackendPlatform(selector.platform!),
+              ),
+      );
+      final filtered = devices.where(selector._matches).toList();
+      if (filtered.isEmpty) {
+        throw AppError(
+          AppErrorCodes.deviceNotFound,
+          'No device matches the selector',
+          details: {
+            if (selector.platform != null)
+              'platform': platformSelectorToString(selector.platform!),
+            if (selector.serial != null) 'serial': selector.serial,
+            if (selector.name != null) 'name': selector.name,
+            'available': devices.map((d) => d.id).toList(),
+          },
+        );
+      }
+      picked = filtered.first;
     }
-    final picked = filtered.first;
     // Preserve any existing session fields (appId, metadata, etc.) — we
     // only want to refresh the deviceSerial. Matters for cross-invocation
     // session sharing: without this merge, every CLI invocation would

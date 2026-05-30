@@ -47,6 +47,10 @@ class Ids {
   // Gesture Lab
   static const gestureScale = 'fixture.gesture.scale_text';
   static const gesturePan = 'fixture.gesture.pan_position_text';
+  static const gestureFlingStatus = 'fixture.gesture.fling_status_text';
+  static const gesturePinchTarget = 'fixture.gesture.pinch_target';
+  static const gesturePanTarget = 'fixture.gesture.pan_target';
+  static const gestureFlingTarget = 'fixture.gesture.fling_target';
 }
 
 /// Per-platform bundle / package identifier of the fixture app.

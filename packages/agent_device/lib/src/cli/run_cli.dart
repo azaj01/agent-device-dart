@@ -121,6 +121,27 @@ CommandRunner<int> buildCliRunner({String executableName = 'agent-device'}) {
 /// pass `'ad'` when invoked through the short alias, `'agent-device'`
 /// otherwise. The default falls back to detecting the invoked binary
 /// from `Platform.executable`.
+/// Sentinel prefix used to shield negative-number positionals from the args
+/// parser (see [protectNegativePositionals]). A private-use code point that
+/// will never appear in real input.
+const String _negativeArgGuard = '';
+
+final RegExp _negativeNumberToken = RegExp(r'^-\d+(\.\d+)?$');
+
+/// `package:args` treats a token like `-120` as a cluster of short flags, so a
+/// negative-number positional (`gesture pan 0 -120`, `swipe`, etc.) fails with
+/// "Could not find an option with short name -1". Prefix such tokens with a
+/// private-use guard so the parser sees a plain positional; [AgentDeviceCommand]
+/// strips the guard back off when reading `positionals`.
+List<String> protectNegativePositionals(List<String> argv) => [
+      for (final arg in argv)
+        _negativeNumberToken.hasMatch(arg) ? '$_negativeArgGuard$arg' : arg,
+    ];
+
+/// Remove the [protectNegativePositionals] guard from a single token.
+String stripNegativeArgGuard(String value) =>
+    value.startsWith(_negativeArgGuard) ? value.substring(1) : value;
+
 Future<int> runCli(List<String> argv, {String? executableName}) async {
   final name = executableName ?? _detectExecutableName();
   final runner = buildCliRunner(executableName: name);
@@ -136,7 +157,7 @@ Future<int> runCli(List<String> argv, {String? executableName}) async {
   initLogger(verbose: verbose);
 
   try {
-    final result = await runner.run(argv);
+    final result = await runner.run(protectNegativePositionals(argv));
     return result ?? 0;
   } on UsageException catch (e) {
     if (asJson) {

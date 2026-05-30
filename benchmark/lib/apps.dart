@@ -141,6 +141,56 @@ class FlutterFixtureApp extends BenchApp {
       afterReset == 0,
       'Reset should return the counter to 0 (afterReset=$afterReset)',
     );
+
+    // --- Multi-page navigation with confirmations, including back. Each hop
+    // asserts the destination appeared AND the previous screen is gone, so a
+    // missed tap can't pass as a successful navigation. Back uses the nav-bar
+    // "Back" button on iOS (the runner has no in-app back for Flutter routes)
+    // and the hardware back on Android, via Driver.goBack(). ---
+    await d.relaunch(app);
+    await d.tapId(Ids.homeOpenCatalog);
+    snap = await d.snap();
+    d.check(
+      'nav: Home→Catalog confirmed',
+      hasId(snap, Ids.catalogFilter) && !hasId(snap, Ids.homeScenarioTitle),
+      'Catalog should appear and Home should be gone',
+    );
+    var navDetailOpened = false;
+    for (var attempt = 0; attempt < 2 && !navDetailOpened; attempt++) {
+      await d.tapId(Ids.catalogTaskReleaseChecklist);
+      snap = await d.snap();
+      navDetailOpened = hasId(snap, Ids.taskDetailComplete);
+    }
+    d.check(
+      'nav: Catalog→Detail confirmed',
+      navDetailOpened && !hasId(snap, Ids.catalogFilter),
+      'Task detail should appear and the catalog list should be gone',
+    );
+    await d.goBack();
+    snap = await d.snap();
+    d.check(
+      'nav: Detail→Catalog (back) confirmed',
+      hasId(snap, Ids.catalogFilter) && !hasId(snap, Ids.taskDetailComplete),
+      'Back should return to the catalog list',
+    );
+    await d.goBack();
+    snap = await d.snap();
+    d.check(
+      'nav: Catalog→Home (back) confirmed',
+      hasId(snap, Ids.homeScenarioTitle) && !hasId(snap, Ids.catalogFilter),
+      'Back should return to Home',
+    );
+
+    // --- diff: `diff snapshot` against the session baseline after a mutation.
+    // A genuine divergence — npm supports snapshot diffing, the Dart port does
+    // not yet, so this passes on npm and fails on Dart. ---
+    await d.relaunch(app);
+    await d.tapId(Ids.homeOpenStateLab);
+    await d.snap(); // establish a snapshot baseline for the session
+    await d.tapId(Ids.stateIncrease); // mutate
+    final diff = await d.t.run(['diff', 'snapshot']);
+    d.check('diff: snapshot diff supported', diff.ok,
+        'diff snapshot should report what changed (npm); Dart lacks the command');
   }
 }
 
@@ -163,6 +213,24 @@ class T {
   static const catalogTitle = 'catalog-title';
   static const catalogSearch = 'catalog-search';
   static const productCitrus = 'product-card-citrus-kit';
+  static const detailsCitrus = 'details-citrus-kit';
+
+  static const productTitle = 'product-title';
+  static const productBack = 'product-back';
+
+  static const homeOpenModal = 'home-open-modal';
+
+  // Gesture lab (embedded on the Home screen).
+  static const gestureTarget = 'gesture-target';
+  static const gestureChangeStatus = 'gesture-change-status';
+  static const gestureTransformStatus = 'gesture-transform-status';
+  static const gestureFlingStatus = 'gesture-fling-status';
+
+  // Product detail (numeric quantity stepper) + catalog long list.
+  static const quantityIncrease = 'quantity-increase';
+  static const quantityDecrease = 'quantity-decrease';
+  static const quantityValue = 'quantity-value';
+  static const catalogFooter = 'catalog-footer';
 
   static const formTitle = 'form-title';
   static const fieldName = 'field-name';
@@ -271,5 +339,102 @@ class ExpoTestApp extends BenchApp {
       if (!settled) await Future<void>.delayed(const Duration(milliseconds: 500));
     }
     d.check('settings: diagnostics load resolves', settled, 'Loading diagnostics should reach a ready/error state');
+
+    // --- Multi-page navigation, confirming each transition (destination
+    // present AND previous screen gone). Exercises tab nav, drill-in to a
+    // product detail, and an in-app back button across six hops. ---
+    await d.relaunch(app);
+    await d.tapLabel(T.tabHome);
+
+    Future<void> hop(String name, Future<void> Function() act, String to, String from) async {
+      await act();
+      final s = await d.snap();
+      d.check('nav: $name confirmed', hasId(s, to) && !hasId(s, from),
+          '$to should appear and $from should be gone');
+    }
+
+    await hop('Home→Catalog', () => d.tapLabel(T.tabCatalog), T.catalogTitle, T.homeTitle);
+    await hop('Catalog→Product', () => d.tapIdScrolling(T.detailsCitrus), T.productTitle, T.catalogTitle);
+    await hop('Product→Catalog (back)', () => d.tapIdScrolling(T.productBack), T.catalogTitle, T.productTitle);
+    await hop('Catalog→Form', () => d.tapLabel(T.tabForm), T.formTitle, T.catalogTitle);
+    await hop('Form→Settings', () => d.tapLabel(T.tabSettings), T.settingsTitle, T.formTitle);
+    await hop('Settings→Home', () => d.tapLabel(T.tabHome), T.homeTitle, T.settingsTitle);
+
+    // --- Multi-touch gestures on the Home gesture lab (mirrors the upstream
+    // gesture-lab replay). pan/rotate/fling are real multi-finger syntheses and
+    // register; pinch is omitted because the shared runner fakes it with a
+    // single-finger "map zoom" drag that react-native-gesture-handler ignores
+    // (a runner limitation, not a CLI difference). ---
+    await d.relaunch(app);
+    await d.tapLabel(T.tabHome);
+    final g = await d.centerArgs(T.gestureTarget);
+    if (g == null) {
+      d.check('gesture: target present', false, 'gesture-target should be on Home');
+    } else {
+      // pan (positive offsets — the Dart CLI parses a negative positional as a
+      // flag, so panning right/down is the portable direction).
+      await d.gesture(['pan', ...g, '120', '0']);
+      final transform = textOfId(await d.snap(), T.gestureTransformStatus) ?? '';
+      d.check('gesture: pan moves target', transform.contains('x ') && !transform.contains('x 0,'),
+          'Pan should change the x offset (got "$transform")');
+
+      await d.gesture(['rotate', '40', ...g]);
+      final afterRotate = textOfId(await d.snap(), T.gestureChangeStatus) ?? '';
+      d.check('gesture: rotate registers', afterRotate.contains('rotate changed yes'),
+          'Rotate should set rotate-changed (got "$afterRotate")');
+
+      final beforeFling = firstInt(textOfId(await d.snap(), T.gestureFlingStatus));
+      await d.gesture(['fling', 'left', ...g, '180']);
+      final afterFling = firstInt(textOfId(await d.snap(), T.gestureFlingStatus));
+      d.check('gesture: fling registers',
+          afterFling != null && (beforeFling == null || afterFling > beforeFling),
+          'Fling should increment the fling counter (before=$beforeFling, after=$afterFling)');
+    }
+
+    // --- Numeric state: product-detail quantity stepper (+2/−1 nets +1). ---
+    await d.relaunch(app);
+    await d.openTab(T.tabCatalog, T.catalogTitle);
+    await d.tapIdScrolling(T.detailsCitrus);
+    await d.revealId(T.quantityValue); // let the detail render before reading
+    final qStart = firstInt(textOfId(await d.snap(), T.quantityValue));
+    await d.tapIdScrolling(T.quantityIncrease);
+    await d.tapIdScrolling(T.quantityIncrease);
+    await d.tapIdScrolling(T.quantityDecrease);
+    final qEnd = firstInt(textOfId(await d.snap(), T.quantityValue));
+    d.check('numeric: quantity stepper +2/−1', qStart != null && qEnd != null && qEnd == qStart + 1,
+        'Quantity should net +1 (start=$qStart, end=$qEnd)');
+
+    // --- Long list: scroll the long catalog and confirm it actually moved.
+    // (The catalog footer sits ~4000px down.) Surfaces the same RN divergence
+    // as the form: the Dart port scrolls the list, npm's `scroll` no-ops. ---
+    await d.relaunch(app);
+    await d.openTab(T.tabCatalog, T.catalogTitle);
+    double? footerY(Map<String, dynamic>? s) {
+      final r = nodeById(s, T.catalogFooter)?['rect'];
+      return (r is Map && r['y'] is num) ? (r['y'] as num).toDouble() : null;
+    }
+    final y0 = footerY(await d.snap());
+    await d.t.run(['scroll', 'up', '400']);
+    await Future<void>.delayed(const Duration(milliseconds: 600));
+    final y1 = footerY(await d.snap());
+    d.check('longlist: scroll moves the long list', y0 != null && y1 != null && y1 < y0 - 50,
+        'Scrolling should move the long catalog (footer y $y0 → $y1)');
+
+    // --- wait: the `wait` command for an async result. A genuine interface
+    // divergence: npm is `wait <text> [timeoutMs]`, the Dart port is
+    // `wait <predicate> <selector> --timeout`, so this npm-grammar call passes
+    // on npm and fails on Dart. ---
+    await d.relaunch(app);
+    await d.tapLabel(T.tabSettings);
+    await d.tapIdScrolling(T.loadDiagnostics);
+    final waited = (await d.t.run(['wait', 'Retry diagnostics', '8000'])).ok;
+    d.check('wait: text-wait command (npm grammar)', waited,
+        'wait <text> <timeout> blocks until the async result (npm); Dart uses a different wait grammar');
+
+    // Note: a behavioural native-alert check (home-open-modal → dismiss) is not
+    // included — the native iOS alert isn't in the app snapshot (so it can't be
+    // tapped by coordinate), Dart has no `alert` command, and npm's `alert`
+    // rejects the benchmark's --udid selector. The `alert` capability gap is
+    // captured in the feature-parity matrix instead.
   }
 }

@@ -82,16 +82,20 @@ Written to `benchmark/report/` (git-ignored):
   accuracy %, and feature coverage.
 - `results-<platform>.json` — machine-readable results.
 
-## Performance gotcha: rebuild the iOS runner
+## Performance gotcha: stale iOS runner builds
 
 The biggest snapshot-latency factor we found was **not** the Dart code — it was a
-**stale cached XCUITest runner build**. The CLI auto-builds the runner once into
-`ios-runner/build/` and reuses it; it does not rebuild when the Swift source
-changes. A stale runner drove `snapshot` at ~1600 ms; rebuilding from source
-dropped it to ~440 ms (at parity with npm). The runner-internal snapshot work is
-only ~170–230 ms — the rest is transport/process overhead.
+**stale cached XCUITest runner build**. A stale runner drove `snapshot` at
+~1600 ms; a fresh build does it in ~440 ms (at parity with npm). The
+runner-internal snapshot work is only ~170–230 ms — the rest is transport.
 
-If Dart snapshots look slow, rebuild the runner first:
+The CLI now **detects staleness automatically**: it stores a content
+fingerprint of the runner source in `.agent-device-runner-cache.json` next to
+the build and rebuilds when the source changes (see
+`packages/agent_device/lib/src/platforms/ios/runner_build_cache.dart`). So you
+normally don't need to do anything.
+
+To force a clean rebuild manually (e.g. after toolchain changes):
 
 ```bash
 make build-ios-runner            # booted simulator

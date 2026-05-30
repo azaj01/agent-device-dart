@@ -102,6 +102,44 @@ class Driver {
     await Future<void>.delayed(const Duration(milliseconds: 500));
   }
 
+  /// Navigate back. On Android the hardware `back` works; on iOS the runner has
+  /// no in-app back control for Flutter routes, so tap the nav-bar "Back"
+  /// button instead. Returns whether a back action was issued.
+  Future<bool> goBack() async {
+    if (t.platform == 'android') {
+      final ok = (await t.run(['back'])).ok;
+      await Future<void>.delayed(settle);
+      return ok;
+    }
+    final ok = await tapLabel('Back');
+    if (ok) await Future<void>.delayed(settle);
+    return ok;
+  }
+
+  /// Run a `gesture <sub> …` command (pinch | pan | fling | rotate | transform),
+  /// then settle. Returns whether it succeeded.
+  Future<bool> gesture(List<String> args) async {
+    final r = await t.run(['gesture', ...args]);
+    await Future<void>.delayed(settle);
+    return r.ok;
+  }
+
+  /// Tap a tab by [label] and confirm [expectId] is present afterward,
+  /// retrying to ride out a missed tap or a snapshot taken mid-transition.
+  Future<bool> openTab(String label, String expectId) async {
+    for (var i = 0; i < 3; i++) {
+      await tapLabel(label);
+      if (hasId(await snap(), expectId)) return true;
+    }
+    return false;
+  }
+
+  /// Centre of [id] as integer "x y" args, or null if absent/off-screen.
+  Future<List<String>?> centerArgs(String id) async {
+    final c = centerById(await snap(), id);
+    return c == null ? null : ['${c.x.round()}', '${c.y.round()}'];
+  }
+
   /// Hard-relaunch [bundleId] to a known first screen (terminate + open). The
   /// in-app back control is unreliable for these apps' pushed routes, so a
   /// platform-level relaunch is the deterministic reset; it is identical for
@@ -114,7 +152,9 @@ class Driver {
     }
     await Future<void>.delayed(const Duration(milliseconds: 300));
     await t.run(['open', bundleId]);
-    await Future<void>.delayed(const Duration(milliseconds: 1000));
+    // Heavier (React Native) apps need longer to render their first frame after
+    // a cold relaunch before the accessibility tree is populated.
+    await Future<void>.delayed(const Duration(milliseconds: 1600));
   }
 
   void check(String name, bool pass, String detail) => run.checks.add(Check(name, pass, detail));

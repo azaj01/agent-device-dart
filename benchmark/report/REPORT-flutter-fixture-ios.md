@@ -5,7 +5,7 @@
 | Target app | `flutter-fixture` |
 | Platform | `ios` |
 | Device | iOS simulator 9046550C-D9D6-4832-AFB6-8C0D73D90285 |
-| Generated | 2026-05-30T12:54:58.894389Z |
+| Generated | 2026-05-30T18:37:06.477735Z |
 | Reps (perf) | 5 |
 | Dart binary | `0.0.4` |
 | npm CLI | `0.16.4` |
@@ -16,42 +16,42 @@ Both CLIs drive the **same** Flutter fixture app on the **same** device through 
 
 Median of 5 reps on the Home screen, same booted device, run back-to-back. Lower is better; bars scale to the slower CLI per row.
 
-**`startup (--version)`**
-- dart `█████████░░░░░░░░░░░` 34 ms · p95 45 ms
-- npm  `████████████████████` 78 ms · p95 85 ms
-- Dart is **2.29× faster**
+**`snapshot (isolated)`**
+- dart `███████████░░░░░░░░░` 133 ms · p95 145 ms · σ 9 ms · n=10
+- npm  `████████████████████` 246 ms · p95 408 ms · σ 55 ms · n=10
+- Dart is **1.85× faster**
 
-**`snapshot`**
-- dart `████████████████████` 1333 ms · p95 1402 ms
-- npm  `███░░░░░░░░░░░░░░░░░` 216 ms · p95 252 ms
-- npm is **6.17× faster**
+**`snapshot (mixed)`**
+- dart `████████████░░░░░░░░` 137 ms · p95 173 ms · σ 19 ms · n=5
+- npm  `████████████████████` 235 ms · p95 341 ms · σ 54 ms · n=5
+- Dart is **1.72× faster**
 
 **`screenshot`**
-- dart `██████████░░░░░░░░░░` 385 ms · p95 424 ms
-- npm  `████████████████████` 758 ms · p95 1025 ms
-- Dart is **1.97× faster**
+- dart `█████░░░░░░░░░░░░░░░` 274 ms · p95 434 ms · σ 68 ms · n=5
+- npm  `████████████████████` 1141 ms · p95 1431 ms · σ 204 ms · n=5
+- Dart is **4.16× faster**
 
 **`perf`**
-- dart `████████████████████` 748 ms · p95 796 ms
-- npm  `████████░░░░░░░░░░░░` 314 ms · p95 322 ms
-- npm is **2.38× faster**
+- dart `████████████████████` 729 ms · p95 1523 ms · σ 338 ms · n=5
+- npm  `███████████░░░░░░░░░` 395 ms · p95 564 ms · σ 91 ms · n=5
+- npm is **1.85× faster**
 
 **`appstate`**
-- dart `████████████████████` 449 ms · p95 450 ms
-- npm  `████░░░░░░░░░░░░░░░░` 83 ms · p95 90 ms
-- npm is **5.41× faster**
+- dart `████████████████████` 328 ms · p95 396 ms · σ 36 ms · n=5
+- npm  `██████░░░░░░░░░░░░░░` 99 ms · p95 110 ms · σ 10 ms · n=5
+- npm is **3.31× faster**
 
 **`press`**
-- dart `████████████████████` 2897 ms · p95 3133 ms
-- npm  `█████░░░░░░░░░░░░░░░` 661 ms · p95 44200 ms
-- npm is **4.38× faster**
+- dart `████████████████████` 675 ms · p95 941 ms · σ 108 ms · n=5
+- npm  `████████████████████` 670 ms · p95 48122 ms · σ 18955 ms · n=5
+- npm is **1.01× faster**
 
 
 ## 🥶 Performance — cold costs (one-off)
 
 | Measurement | Dart | npm |
 | --- | --- | --- |
-| cold open (fresh state dir) | 572 ms | 4073 ms |
+| cold open (fresh state dir) | 481 ms | 4462 ms |
 
 > Note: this measures session bootstrap + runner launch on a fresh state dir. The first-ever native runner *compile* is cached outside the state dir and is not included.
 
@@ -60,10 +60,13 @@ Median of 5 reps on the Home screen, same booted device, run back-to-back. Lower
 
 Identical command stream against the fixture oracle. Both CLIs are expected to reach parity; any miss is a flagged divergence.
 
-- **Dart**: 15/15 `████████████████████` 100%
-- **npm**: 15/15 `████████████████████` 100%
+- **Dart**: 19/20 `███████████████████░` 95%
+- **npm**: 20/20 `████████████████████` 100%
 
-✅ No divergences — both CLIs passed every check.
+### Divergences
+
+**Dart failures:**
+- ❌ diff: snapshot diff supported — diff snapshot should report what changed (npm); Dart lacks the command
 
 
 ## 🧩 Feature set — command parity

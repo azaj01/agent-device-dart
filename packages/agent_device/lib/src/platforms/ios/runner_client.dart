@@ -31,6 +31,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:agent_device/src/native/resolve.dart';
+import 'package:agent_device/src/platforms/ios/runner_build_cache.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
 import 'package:agent_device/src/utils/logger.dart';
@@ -253,58 +254,60 @@ class IosRunnerClient {
     String productsDir, {
     IosRunnerKind kind = IosRunnerKind.simulator,
   }) async {
-    try {
-      return (
-        template: findXctestrun(productsDir, kind: kind),
-        productsDir: productsDir,
+    final projectRoot = await _findProjectRoot();
+    final projectPath = projectRoot == null ? null : _resolveProjectPath(projectRoot);
+    final runnerSourceRoot = projectPath == null ? null : p.dirname(projectPath);
+    final hasBuildDirOverride =
+        (Platform.environment['AGENT_DEVICE_IOS_RUNNER_BUILD_DIR'] ?? '').trim().isNotEmpty;
+
+    // Whether the cached build at [productsDir]'s derived root can be reused.
+    // We only manage the simulator build; device builds (and an explicit
+    // external build dir) are trusted as-is. When the runner source can't be
+    // located we also trust whatever exists, preserving the legacy fallback.
+    bool reusable(String dir) {
+      if (kind == IosRunnerKind.device || runnerSourceRoot == null) return true;
+      final derived = p.dirname(p.dirname(dir)); // dir == <derived>/Build/Products
+      return RunnerBuildCache.canReuse(
+        derived,
+        RunnerBuildCache.expectedMetadata(runnerSourceRoot, kind.wire),
       );
+    }
+
+    // 1) Honor the resolved/override products dir if present and fresh.
+    try {
+      final template = findXctestrun(productsDir, kind: kind);
+      if (kind == IosRunnerKind.device || hasBuildDirOverride || reusable(productsDir)) {
+        return (template: template, productsDir: productsDir);
+      }
     } on AppError {
       if (kind == IosRunnerKind.device) rethrow;
     }
-    final projectRoot = await _findProjectRoot();
-    if (projectRoot == null) {
-      return (
-        template: findXctestrun(productsDir, kind: kind),
-        productsDir: productsDir,
-      );
+
+    // Can't (re)build without the project → return whatever findXctestrun says.
+    if (projectRoot == null || projectPath == null) {
+      return (template: findXctestrun(productsDir, kind: kind), productsDir: productsDir);
     }
-    // The bundled native asset layout has AgentDeviceRunner/ directly inside
-    // the ios-runner dir; the repo layout has ios-runner/AgentDeviceRunner/.
-    var projectPath = p.join(
-      projectRoot,
-      'AgentDeviceRunner',
-      'AgentDeviceRunner.xcodeproj',
-    );
-    if (!Directory(projectPath).existsSync()) {
-      projectPath = p.join(
-        projectRoot,
-        'ios-runner',
-        'AgentDeviceRunner',
-        'AgentDeviceRunner.xcodeproj',
-      );
-    }
-    if (!Directory(projectPath).existsSync()) {
-      return (
-        template: findXctestrun(productsDir, kind: kind),
-        productsDir: productsDir,
-      );
-    }
+
     final buildSubdir = kind == IosRunnerKind.device ? 'build-device' : 'build';
     final derivedDataPath = p.join(projectRoot, buildSubdir);
-    final existingProductsDir =
-        p.join(derivedDataPath, 'Build', 'Products');
-    // Check if build products already exist at the project root (e.g. from
-    // a previous `dart run` session). Avoids unnecessary rebuilds when the
-    // compiled binary runs from a different CWD.
+    final managedProductsDir = p.join(derivedDataPath, 'Build', 'Products');
+
+    // 2) Reuse a fresh managed build (e.g. from a previous session) without
+    // rebuilding; rebuild when the runner source fingerprint no longer matches.
     try {
-      return (
-        template: findXctestrun(existingProductsDir, kind: kind),
-        productsDir: existingProductsDir,
-      );
+      final template = findXctestrun(managedProductsDir, kind: kind);
+      if (reusable(managedProductsDir)) {
+        return (template: template, productsDir: managedProductsDir);
+      }
     } on AppError {
       // Not found — proceed to auto-build.
     }
-    final progress = logger.progress('[runner] auto-building iOS runner');
+
+    // 3) Build (source changed, schema/version bumped, products missing, or
+    // first run), then record the cache so later runs can reuse it.
+    // Progress to stderr — stdout is reserved for the command's (often --json)
+    // result and must not be polluted with build chatter.
+    logger.stderr('[runner] building iOS runner…');
     final result = await runCmd('xcodebuild', [
       'build-for-testing',
       '-project',
@@ -318,7 +321,6 @@ class IosRunnerClient {
       '-quiet',
     ], const ExecOptions(allowFailure: true));
     if (result.exitCode != 0) {
-      progress.finish(showTiming: true);
       throw AppError(
         AppErrorCodes.commandFailed,
         'Auto-build of iOS runner failed (exit ${result.exitCode}).',
@@ -328,12 +330,29 @@ class IosRunnerClient {
         },
       );
     }
-    progress.finish(showTiming: true);
-    final builtProductsDir = p.join(derivedDataPath, 'Build', 'Products');
-    return (
-      template: findXctestrun(builtProductsDir, kind: kind),
-      productsDir: builtProductsDir,
-    );
+    final template = findXctestrun(managedProductsDir, kind: kind);
+    if (runnerSourceRoot != null && kind != IosRunnerKind.device) {
+      RunnerBuildCache.writeFresh(
+        derivedDataPath,
+        RunnerBuildCache.expectedMetadata(runnerSourceRoot, kind.wire),
+        template.path,
+        RunnerBuildCache.collectProducts(managedProductsDir),
+      );
+    }
+    return (template: template, productsDir: managedProductsDir);
+  }
+
+  /// Locate the runner `.xcodeproj` under [projectRoot]: the bundled native
+  /// asset layout has `AgentDeviceRunner/` directly inside the ios-runner dir;
+  /// the repo layout nests it under `ios-runner/AgentDeviceRunner/`.
+  static String? _resolveProjectPath(String projectRoot) {
+    for (final candidate in [
+      p.join(projectRoot, 'AgentDeviceRunner', 'AgentDeviceRunner.xcodeproj'),
+      p.join(projectRoot, 'ios-runner', 'AgentDeviceRunner', 'AgentDeviceRunner.xcodeproj'),
+    ]) {
+      if (Directory(candidate).existsSync()) return candidate;
+    }
+    return null;
   }
 
   static Future<String?> _findProjectRoot() async {

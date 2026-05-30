@@ -168,20 +168,18 @@ Future<AndroidSnapshotHelperArtifact?> _autoBuildHelperIfPossible() async {
 
   final distDir = p.join(helperDir, 'dist');
   try {
-    final progress = logger.progress(
-      '[snapshot] auto-building Android snapshot helper APK',
-    );
+    // Progress/info must go to stderr — stdout is reserved for the command's
+    // (often --json) result, which this message would otherwise corrupt.
+    logger.stderr('[snapshot] auto-building Android snapshot helper APK…');
     final script = packageScript.existsSync() ? packageScript : buildScript;
     final args = packageScript.existsSync()
         ? [script.path, '0.0.1', 'local', distDir]
         : [script.path, '0.0.1', distDir];
     final r = await runCmd('sh', args, const ExecOptions(allowFailure: true));
     if (r.exitCode != 0) {
-      progress.finish(showTiming: true);
       logger.stderr('[snapshot] helper build failed (exit ${r.exitCode})');
       return null;
     }
-    progress.finish(showTiming: true);
   } catch (_) {
     return null;
   }

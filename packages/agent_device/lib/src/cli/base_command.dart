@@ -173,7 +173,12 @@ abstract class AgentDeviceCommand extends Command<int> {
   }
 
   /// Positional arguments remaining after flag parsing.
-  List<String> get positionals => argResults?.rest ?? const [];
+  List<String> get positionals => [
+    // Strip the negative-number guard added by protectNegativePositionals so
+    // commands see the real token (e.g. "-120" rather than "-120").
+    for (final arg in argResults?.rest ?? const <String>[])
+      arg.startsWith('\u{E000}') ? arg.substring(1) : arg,
+  ];
 
   /// Helper for subclasses to uniformly print a command result.
   void emitResult(Object? data, {String Function(Object? data)? humanFormat}) =>
