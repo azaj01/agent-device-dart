@@ -1,3 +1,33 @@
+## 0.0.8
+
+**New Capabilities (ported from agent-device)**
+
+- iOS transform gesture support and full `gesture` command coverage — `pan` / `pinch` / `rotate` / `fling` / `transform` driven through real multi-finger XCUITest synthesis
+- iOS repro-evidence capabilities (#573)
+- Precise location settings, with `setSetting` wired through the full stack (iOS location + Android) (#491)
+- Auto-reverse `adb` localhost port forwards when opening URLs on Android
+- Platform alert handling (`alert` accept/dismiss/text)
+- Scroll-to-edge support and iOS `scroll` support
+- Bundled pre-built Android multitouch helper APK (no on-device build needed)
+
+**Performance**
+
+- iOS: rebuild the XCUITest runner only when its source actually changes, using a content-fingerprint staleness cache (`runner_build_cache.dart`). Mirrors upstream's distribution staleness detection and eliminates the stale-build slowdown that made `snapshot` ~4× slower; restores parity with upstream.
+- Skip device enumeration when both `--serial` and `--platform` are pinned (~300ms faster per command on Android)
+- Direct iOS selector tap/fill optimization and faster hot iOS taps
+- Cache app resolution
+
+**Bug Fixes**
+
+- CLI: accept negative-number positionals (e.g. `gesture pan` offsets) instead of misparsing them as short flags; keep `--json` stdout clean of progress/info lines (now routed to stderr)
+- Android: clarify gesture transform behavior (#584); improve snapshot fidelity (#580); recover from app-owned ANRs; preserve scoped snapshot refs (#456); `finishSafely` in the snapshot-helper APK
+- iOS: simplify interactive snapshots; compact unchanged-snapshot output
+- Report blockers on `wait` timeout
+
+**Tooling**
+
+- Added a head-to-head benchmark harness (`benchmark/`) that drives the same app on the same iOS simulator / Android emulator through both this port and the upstream npm `agent-device`, measuring latency, command-level accuracy, and feature parity.
+
 ## 0.0.7
 
 **Bug Fixes**
