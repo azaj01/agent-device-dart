@@ -1,0 +1,13 @@
+name: agent_device_benchmark
+description: >-
+  Head-to-head benchmark of the Dart port (agent_device) against the upstream
+  npm agent-device CLI, driving the same Flutter fixture app on the same device.
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.10.0
+
+# No third-party dependencies on purpose: the harness only shells out to the
+# two CLIs and parses their shared JSON envelope with dart:convert, so it stays
+# a neutral referee that favours neither implementation.
