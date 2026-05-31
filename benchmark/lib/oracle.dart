@@ -51,6 +51,19 @@ class Ids {
   static const gesturePinchTarget = 'fixture.gesture.pinch_target';
   static const gesturePanTarget = 'fixture.gesture.pan_target';
   static const gestureFlingTarget = 'fixture.gesture.fling_target';
+
+  // Animation Lab (non-quiescent UI: infinite animation + delayed transition)
+  static const homeOpenAnimationLab = 'fixture.home.open_animation_lab_button';
+  static const animationInfiniteSpinner = 'fixture.animation.infinite_spinner';
+  static const animationSpinnerState = 'fixture.animation.spinner_state_text';
+  static const animationToggleSpinner =
+      'fixture.animation.toggle_spinner_button';
+  static const animationTick = 'fixture.animation.tick_text';
+  static const animationStartTransition =
+      'fixture.animation.start_transition_button';
+  static const animationTransitionStatus =
+      'fixture.animation.transition_status_text';
+  static const animationRevealed = 'fixture.animation.revealed_text';
 }
 
 /// Per-platform bundle / package identifier of the fixture app.

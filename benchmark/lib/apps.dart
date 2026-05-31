@@ -191,6 +191,48 @@ class FlutterFixtureApp extends BenchApp {
     final diff = await d.t.run(['diff', 'snapshot']);
     d.check('diff: snapshot diff supported', diff.ok,
         'diff snapshot should report what changed (npm); Dart lacks the command');
+
+    // --- Animation Lab: non-quiescent UI. An infinite (repeating) rotation
+    // plus a 500ms ticker mean the app never reaches idle; a separate button
+    // triggers a result that only appears after a ~1.2s settle window. This
+    // checks three things head-to-head: snapshots stay responsive while the
+    // app never idles, a tap registers mid-animation, and a triggered-then-
+    // delayed result is observed only after waiting (not on the immediate,
+    // pre-settle snapshot). The launch card sits below the fold, so reach it
+    // by scrolling. ---
+    await d.relaunch(app);
+    final animReached = await d.tapIdScrolling(Ids.homeOpenAnimationLab);
+    snap = await d.snap();
+    d.check(
+      'animation: lab opens and snapshot is responsive under infinite animation',
+      animReached &&
+          hasId(snap, Ids.animationInfiniteSpinner) &&
+          (textOfId(snap, Ids.animationSpinnerState) ?? '').contains('running'),
+      'Animation Lab should open and report "spinner: running" — snapshot must '
+          'not hang on quiescence while the app animates forever',
+    );
+    // A tap must register even while the infinite animation is running.
+    await d.tapId(Ids.animationToggleSpinner);
+    snap = await d.snap();
+    d.check(
+      'animation: tap registers mid-animation',
+      (textOfId(snap, Ids.animationSpinnerState) ?? '').contains('stopped'),
+      'Toggling should stop the spinner while it is animating '
+          '(got "${textOfId(snap, Ids.animationSpinnerState)}")',
+    );
+    // Delayed transition: the result only materialises after a settle window.
+    // We must wait before asserting — an immediate snapshot would see the
+    // pre-settle ("running") state.
+    await d.tapId(Ids.animationStartTransition);
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    snap = await d.snap();
+    d.check(
+      'animation: delayed transition settles after a wait',
+      (textOfId(snap, Ids.animationTransitionStatus) ?? '').contains('done') &&
+          hasId(snap, Ids.animationRevealed),
+      'After ~1.2s the transition should read "done" and reveal its result '
+          '(got "${textOfId(snap, Ids.animationTransitionStatus)}")',
+    );
   }
 }
 

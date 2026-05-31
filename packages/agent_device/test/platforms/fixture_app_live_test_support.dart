@@ -368,6 +368,58 @@ Future<void> typeIntoField(
   await device.typeText(value, delayMs: delayMs);
 }
 
+/// Scroll the Home list until a below-the-fold launch button [id] enters the
+/// accessibility tree, then tap its real on-screen centre.
+///
+/// Off-screen `ListView` children are absent from the tree, and a revealed
+/// launch card can momentarily emit a zero-size "ghost" node sharing the same
+/// id — a plain selector tap can resolve to that ghost and no-op. Tapping the
+/// positive-area node by coordinates is the reliable path.
+Future<void> tapRevealedLaunchCard(
+  AgentDevice device,
+  String id, {
+  int maxScrolls = 8,
+}) async {
+  // Scroll until the button is not only visible but has settled — i.e. its y
+  // stops changing because the list has hit the bottom. A button caught
+  // mid-scroll sits against the bottom edge where taps are unreliable.
+  SnapshotNode? node;
+  double? lastY;
+  for (var i = 0; i < maxScrolls; i++) {
+    node = await _firstVisibleNodeById(device, id);
+    if (node != null && lastY != null && (node.rect!.y - lastY).abs() < 2) {
+      break; // settled
+    }
+    lastY = node?.rect?.y;
+    await swipeUp(device, startY: 640, endY: 240);
+    await Future<void>.delayed(const Duration(milliseconds: 500));
+  }
+  node = await _firstVisibleNodeById(device, id) ?? node;
+  if (node == null) {
+    throw TestFailure(
+      'Could not scroll launch button "$id" into view after $maxScrolls swipes.',
+    );
+  }
+  final rect = node.rect!;
+  await device.tap(rect.x + (rect.width / 2), rect.y + (rect.height / 2));
+  await Future<void>.delayed(const Duration(milliseconds: 800));
+}
+
+Future<SnapshotNode?> _firstVisibleNodeById(
+  AgentDevice device,
+  String id,
+) async {
+  final snapshot = await device.snapshot();
+  final nodes = (snapshot.nodes ?? const []).whereType<SnapshotNode>();
+  for (final node in nodes) {
+    final rect = node.rect;
+    if (node.identifier == id && rect != null && rect.width > 0 && rect.height > 0) {
+      return node;
+    }
+  }
+  return null;
+}
+
 Future<void> swipeUp(
   AgentDevice device, {
   num startX = 200,

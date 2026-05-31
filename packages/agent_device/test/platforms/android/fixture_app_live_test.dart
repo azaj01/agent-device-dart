@@ -278,4 +278,50 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 150)),
   );
+
+  test(
+    'Animation Lab stays responsive under infinite animation and settles a '
+    'delayed transition',
+    () async {
+      recorder?.chapter('Animation Lab infinite + delayed transition');
+      // Animation Lab is the last card on Home — scroll until its launch
+      // button enters the accessibility tree (off-screen ListView children
+      // are absent), then tap it.
+      await tapRevealedLaunchCard(
+        device,
+        FixtureIds.homeOpenAnimationLabButton,
+      );
+
+      // An infinite (repeating) rotation plus a 500ms ticker mean the app
+      // never reaches an idle state. snapshot / wait must not hang waiting for
+      // quiescence — these assertions returning promptly proves they don't.
+      await expectVisibleId(device, FixtureIds.animationInfiniteSpinner);
+      await expectIdText(
+        device,
+        FixtureIds.animationSpinnerStateText,
+        'spinner: running',
+      );
+
+      // A tap must register even while the infinite animation is running.
+      await tapId(device, FixtureIds.animationToggleSpinnerButton);
+      await expectIdText(
+        device,
+        FixtureIds.animationSpinnerStateText,
+        'spinner: stopped',
+      );
+
+      // Delayed transition: the result only materialises after a ~1.2s settle
+      // window. expectIdText polls, so it waits for the post-settle state
+      // rather than asserting on the immediate (pre-settle) snapshot — the
+      // correct pattern for triggered-then-delayed UI.
+      await tapId(device, FixtureIds.animationStartTransitionButton);
+      await expectIdText(
+        device,
+        FixtureIds.animationTransitionStatusText,
+        'transition: done',
+      );
+      await expectVisibleId(device, FixtureIds.animationRevealedText);
+    },
+    timeout: const Timeout(Duration(seconds: 150)),
+  );
 }
