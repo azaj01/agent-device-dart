@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'fixture_ids.dart';
@@ -94,6 +96,14 @@ class HomeScreen extends StatelessWidget {
             description: 'Pinch-to-zoom, pan/drag, and fling gestures.',
             destinationBuilder: GestureLabScreen.new,
             launchButtonId: FixtureIds.homeOpenGestureLabButton,
+          ),
+          const _LaunchCard(
+            title: 'Animation Lab',
+            description:
+                'Infinite spinner, periodic ticker, and a delayed transition '
+                'that only settles after a wait.',
+            destinationBuilder: AnimationLabScreen.new,
+            launchButtonId: FixtureIds.homeOpenAnimationLabButton,
           ),
           const SizedBox(height: 12),
           Card(
@@ -1033,6 +1043,159 @@ class _GestureLabScreenState extends State<GestureLabScreen> {
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Exercises non-quiescent UI: an infinite (repeating) rotation, a periodic
+/// ticker that mutates state forever, and a finite delayed transition. These
+/// are the cases where a UI-automation runner must either skip quiescence
+/// (for the never-idle animations) or wait for settle (for the delayed
+/// transition) — the screen lets an agent verify both behaviours.
+class AnimationLabScreen extends StatefulWidget {
+  const AnimationLabScreen({super.key});
+
+  @override
+  State<AnimationLabScreen> createState() => _AnimationLabScreenState();
+}
+
+class _AnimationLabScreenState extends State<AnimationLabScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _spinController;
+  Timer? _ticker;
+  int _ticks = 0;
+  bool _spinnerRunning = true;
+  String _transitionStatus = 'idle';
+  bool _revealed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat();
+    // Periodic state mutation: the app's element tree changes forever, so it
+    // never reaches a steady "idle" state.
+    _ticker = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted) return;
+      setState(() => _ticks++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _spinController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSpinner() {
+    setState(() {
+      _spinnerRunning = !_spinnerRunning;
+      if (_spinnerRunning) {
+        _spinController.repeat();
+      } else {
+        _spinController.stop();
+      }
+    });
+  }
+
+  void _startTransition() {
+    setState(() {
+      _transitionStatus = 'running';
+      _revealed = false;
+    });
+    // Finite transition: the result only becomes assertable after a settle
+    // window. An agent that snapshots immediately should still see "running".
+    Future<void>.delayed(const Duration(milliseconds: 1200), () {
+      if (!mounted) return;
+      setState(() {
+        _transitionStatus = 'done';
+        _revealed = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Animation Lab')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'Infinite animation (never quiesces)',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: _identified(
+              FixtureIds.animationInfiniteSpinner,
+              RotationTransition(
+                turns: _spinController,
+                child: Container(
+                  width: 96,
+                  height: 96,
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.indigo),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.sync, size: 40),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _identifiedText(
+            FixtureIds.animationSpinnerStateText,
+            'spinner: ${_spinnerRunning ? 'running' : 'stopped'}',
+          ),
+          const SizedBox(height: 8),
+          _identifiedControl(
+            FixtureIds.animationToggleSpinnerButton,
+            OutlinedButton(
+              onPressed: _toggleSpinner,
+              child: Text(_spinnerRunning ? 'Stop spinner' : 'Start spinner'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Periodic ticker — proves snapshots return fresh, changing values
+          // even while the tree is mutating continuously.
+          _identifiedText(FixtureIds.animationTickText, 'ticks: $_ticks'),
+          const Divider(height: 32),
+          const Text(
+            'Delayed transition (must settle before asserting)',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          _identifiedText(
+            FixtureIds.animationTransitionStatusText,
+            'transition: $_transitionStatus',
+          ),
+          const SizedBox(height: 8),
+          _identifiedControl(
+            FixtureIds.animationStartTransitionButton,
+            FilledButton(
+              onPressed: _startTransition,
+              child: const Text('Start delayed transition'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          AnimatedOpacity(
+            opacity: _revealed ? 1.0 : 0.0,
+            duration: const Duration(milliseconds: 400),
+            child: _revealed
+                ? _identifiedText(
+                    FixtureIds.animationRevealedText,
+                    'revealed-after-1200ms',
+                  )
+                : const SizedBox(height: 24),
           ),
         ],
       ),

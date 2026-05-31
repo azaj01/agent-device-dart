@@ -78,6 +78,24 @@ class FixtureIds {
 
   static const homeOpenGestureLabButton =
       'fixture.home.open_gesture_lab_button';
+  static const homeOpenAnimationLabButton =
+      'fixture.home.open_animation_lab_button';
+
+  // Animation Lab. Probes how snapshot / tap behave when the app is never
+  // "idle": an infinite (repeating) rotation, a periodic ticker that mutates
+  // state forever, and a finite delayed transition whose result only appears
+  // after a settle window.
+  static const animationInfiniteSpinner = 'fixture.animation.infinite_spinner';
+  static const animationSpinnerStateText =
+      'fixture.animation.spinner_state_text';
+  static const animationToggleSpinnerButton =
+      'fixture.animation.toggle_spinner_button';
+  static const animationTickText = 'fixture.animation.tick_text';
+  static const animationStartTransitionButton =
+      'fixture.animation.start_transition_button';
+  static const animationTransitionStatusText =
+      'fixture.animation.transition_status_text';
+  static const animationRevealedText = 'fixture.animation.revealed_text';
 
   static const gestureScaleText = 'fixture.gesture.scale_text';
   static const gesturePanPositionText = 'fixture.gesture.pan_position_text';
