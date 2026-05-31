@@ -100,52 +100,61 @@ String? _dirFromExeRelative(String group) {
 // ---------------------------------------------------------------------------
 
 String? _fromRepoRoot(String relativePath) {
-  final root = _findRepoRoot();
-  if (root == null) return null;
-  // Check lib/src/native/ first (package layout)
-  final inLib = File(
-    p.join(
-      root,
-      'packages',
-      'agent_device',
-      'lib',
-      'src',
-      'native',
-      relativePath,
-    ),
-  );
-  if (inLib.existsSync()) return inLib.path;
-  // Check top-level (repo development layout)
-  final topLevel = File(p.join(root, relativePath));
-  if (topLevel.existsSync()) return topLevel.path;
+  for (final root in _candidateRepoRoots()) {
+    // Check lib/src/native/ first (package layout)
+    final inLib = File(
+      p.join(
+        root,
+        'packages',
+        'agent_device',
+        'lib',
+        'src',
+        'native',
+        relativePath,
+      ),
+    );
+    if (inLib.existsSync()) return inLib.path;
+    // Check top-level (repo development layout)
+    final topLevel = File(p.join(root, relativePath));
+    if (topLevel.existsSync()) return topLevel.path;
+  }
   return null;
 }
 
 String? _dirFromRepoRoot(String group) {
-  final root = _findRepoRoot();
-  if (root == null) return null;
-  final inLib = Directory(
-    p.join(root, 'packages', 'agent_device', 'lib', 'src', 'native', group),
-  );
-  if (inLib.existsSync()) return inLib.path;
-  final topLevel = Directory(p.join(root, group));
-  if (topLevel.existsSync()) return topLevel.path;
+  for (final root in _candidateRepoRoots()) {
+    final inLib = Directory(
+      p.join(root, 'packages', 'agent_device', 'lib', 'src', 'native', group),
+    );
+    if (inLib.existsSync()) return inLib.path;
+    final topLevel = Directory(p.join(root, group));
+    if (topLevel.existsSync()) return topLevel.path;
+  }
   return null;
 }
 
-String? _findRepoRoot() {
+/// Yield every directory containing a `pubspec.yaml` reachable by walking up
+/// from each candidate start dir (CWD, exe dir, script dir).
+///
+/// Critically this does NOT stop at the first repo root found: when `ad` runs
+/// as a compiled binary from inside an unrelated Dart/Flutter project, the
+/// CWD's own `pubspec.yaml` would otherwise win and shadow the real
+/// agent-device repo near the executable. Callers probe each root for the
+/// asset they need and take the first that actually has it.
+Iterable<String> _candidateRepoRoots() sync* {
+  final seen = <String>{};
   for (final start in _candidateStartDirs()) {
     var dir = start;
     for (var i = 0; i < 10; i++) {
-      if (File(p.join(dir.path, 'pubspec.yaml')).existsSync()) {
-        return dir.path;
+      if (File(p.join(dir.path, 'pubspec.yaml')).existsSync() &&
+          seen.add(dir.path)) {
+        yield dir.path;
       }
       final parent = dir.parent;
       if (parent.path == dir.path) break;
       dir = parent;
     }
   }
-  return null;
 }
 
 Iterable<Directory> _candidateStartDirs() sync* {
