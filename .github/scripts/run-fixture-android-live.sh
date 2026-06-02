@@ -21,17 +21,37 @@ compress_video() {
   if [[ -f "$out" ]]; then rm -f "$raw"; fi
 }
 
+# Retry a command a few times, sleeping between attempts. The emulator's adb
+# daemon can be briefly flaky right after boot, so a single transient failure
+# shouldn't fail the job.
+retry() {
+  local max="$1"; shift
+  local n=1
+  until "$@"; do
+    local rc=$?
+    if [ "$n" -ge "$max" ]; then
+      echo "::warning::command failed after ${max} attempts (rc=${rc}): $*" >&2
+      return "$rc"
+    fi
+    echo "attempt ${n}/${max} failed (rc=${rc}), retrying in 5s: $*" >&2
+    n=$((n + 1)); sleep 5
+  done
+}
+
+# Make sure adb is actually connected before doing anything device-bound.
+adb wait-for-device
+
 cd test_apps/agent_device_fixture_app
 flutter build apk --debug
-adb install -r build/app/outputs/flutter-apk/app-debug.apk
+retry 3 adb install -r build/app/outputs/flutter-apk/app-debug.apk
 cd "$repo_root"
 
 # Disable stylus handwriting overlay — it intercepts adb input text on
 # API 36+ emulators and corrupts fill/type commands.
 adb -s emulator-5554 shell settings put secure stylus_handwriting_enabled 0 || true
 
-dart run packages/agent_device/bin/agent_device.dart open com.example.agent_device_fixture_app --session fixture-android-ci --platform android --serial emulator-5554 --json
-dart run packages/agent_device/bin/agent_device.dart snapshot --session fixture-android-ci --platform android --serial emulator-5554 --json
+retry 3 dart run packages/agent_device/bin/agent_device.dart open com.example.agent_device_fixture_app --session fixture-android-ci --platform android --serial emulator-5554 --json
+retry 3 dart run packages/agent_device/bin/agent_device.dart snapshot --session fixture-android-ci --platform android --serial emulator-5554 --json
 
 # TestRecorder inside the Dart test handles record start/stop + chapter
 # markers. AD_RECORD_TESTS tells it where to write the raw MP4.

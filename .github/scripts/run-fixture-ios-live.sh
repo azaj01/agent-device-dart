@@ -22,8 +22,31 @@ compress_video() {
   if [[ -f "$out" ]]; then rm -f "$raw"; fi
 }
 
-dart run packages/agent_device/bin/agent_device.dart open com.example.agentDeviceFixtureApp --session fixture-ios-ci --platform ios --serial "$udid" --json
-dart run packages/agent_device/bin/agent_device.dart snapshot --session fixture-ios-ci --platform ios --serial "$udid" --json
+# Retry a command a few times, sleeping between attempts. CI simulators are
+# slow on first touch, so a single transient failure shouldn't fail the job.
+retry() {
+  local max="$1"; shift
+  local n=1
+  until "$@"; do
+    local rc=$?
+    if [ "$n" -ge "$max" ]; then
+      echo "::warning::command failed after ${max} attempts (rc=${rc}): $*" >&2
+      return "$rc"
+    fi
+    echo "attempt ${n}/${max} failed (rc=${rc}), retrying in 5s: $*" >&2
+    n=$((n + 1)); sleep 5
+  done
+}
+
+# Pre-warm the app launch OUTSIDE ad's 30s xcrun timeout. The first cold launch
+# of a freshly-installed app on a just-booted CI simulator can exceed 30s
+# (dyld/SpringBoard warmup), which is what makes `ad open` time out with
+# "xcrun timed out after 30000ms". A direct simctl launch has no such cap and
+# is a fast no-op once the app is already foreground.
+retry 5 xcrun simctl launch "$udid" com.example.agentDeviceFixtureApp || true
+
+retry 3 dart run packages/agent_device/bin/agent_device.dart open com.example.agentDeviceFixtureApp --session fixture-ios-ci --platform ios --serial "$udid" --json
+retry 3 dart run packages/agent_device/bin/agent_device.dart snapshot --session fixture-ios-ci --platform ios --serial "$udid" --json
 
 # TestRecorder inside the Dart test handles record start/stop + chapter
 # markers. AD_RECORD_TESTS tells it where to write the raw MP4.

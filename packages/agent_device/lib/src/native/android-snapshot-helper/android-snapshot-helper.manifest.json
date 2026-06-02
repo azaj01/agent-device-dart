@@ -4,7 +4,7 @@
   "releaseTag": "local",
   "assetName": "android-snapshot-helper.apk",
   "apkUrl": null,
-  "sha256": "local-build",
+  "sha256": "020ec58aeaddc7835eb94ed7cff141f6ed9b583f9563107a3b9c9fb41e83c238",
   "checksumName": "android-snapshot-helper.apk.sha256",
   "packageName": "com.callstack.agentdevice.snapshothelper",
   "versionCode": 3,
