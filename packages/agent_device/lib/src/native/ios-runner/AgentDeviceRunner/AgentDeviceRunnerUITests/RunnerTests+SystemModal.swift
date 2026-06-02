@@ -46,7 +46,7 @@ extension RunnerTests {
     #endif
   }
 
-  private func firstBlockingSystemModal(in springboard: XCUIApplication) -> XCUIElement? {
+  func firstBlockingSystemModal(in springboard: XCUIApplication) -> XCUIElement? {
     let disableSafeProbe = RunnerEnv.isTruthy("AGENT_DEVICE_RUNNER_DISABLE_SAFE_MODAL_PROBE")
     let queryElements: (() -> [XCUIElement]) -> [XCUIElement] = { fetch in
       if disableSafeProbe {
@@ -76,34 +76,12 @@ extension RunnerTests {
     return nil
   }
 
-  private func safeElementsQuery(_ fetch: () -> [XCUIElement]) -> [XCUIElement] {
-    var elements: [XCUIElement] = []
-    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
-      elements = fetch()
-    })
-    if let exceptionMessage {
-      NSLog(
-        "AGENT_DEVICE_RUNNER_MODAL_QUERY_IGNORED_EXCEPTION=%@",
-        exceptionMessage
-      )
-      return []
-    }
-    return elements
+  func safeElementsQuery(_ fetch: () -> [XCUIElement]) -> [XCUIElement] {
+    safely("MODAL_QUERY", [], fetch)
   }
 
   private func safeIsBlockingSystemModal(_ element: XCUIElement, in springboard: XCUIApplication) -> Bool {
-    var isBlocking = false
-    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
-      isBlocking = isBlockingSystemModal(element, in: springboard)
-    })
-    if let exceptionMessage {
-      NSLog(
-        "AGENT_DEVICE_RUNNER_MODAL_CHECK_IGNORED_EXCEPTION=%@",
-        exceptionMessage
-      )
-      return false
-    }
-    return isBlocking
+    safely("MODAL_CHECK", false) { isBlockingSystemModal(element, in: springboard) }
   }
 
   private func isBlockingSystemModal(_ element: XCUIElement, in springboard: XCUIApplication) -> Bool {
@@ -120,7 +98,7 @@ extension RunnerTests {
     return true
   }
 
-  private func actionableElements(in element: XCUIElement) -> [XCUIElement] {
+  func actionableElements(in element: XCUIElement) -> [XCUIElement] {
     var seen = Set<String>()
     var actions: [XCUIElement] = []
     let descendants = safeElementsQuery {
@@ -134,25 +112,16 @@ extension RunnerTests {
   }
 
   private func safeIsActionableCandidate(_ candidate: XCUIElement, seen: inout Set<String>) -> Bool {
-    var include = false
-    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
-      if !candidate.exists || !candidate.isHittable { return }
-      if !actionableTypes.contains(candidate.elementType) { return }
+    safely("MODAL_ACTION", false) {
+      if !candidate.exists || !candidate.isHittable { return false }
+      if !actionableTypes.contains(candidate.elementType) { return false }
       let frame = candidate.frame
-      if frame.isNull || frame.isEmpty { return }
+      if frame.isNull || frame.isEmpty { return false }
       let key = "\(candidate.elementType.rawValue)-\(frame.origin.x)-\(frame.origin.y)-\(frame.size.width)-\(frame.size.height)-\(candidate.label)"
-      if seen.contains(key) { return }
+      if seen.contains(key) { return false }
       seen.insert(key)
-      include = true
-    })
-    if let exceptionMessage {
-      NSLog(
-        "AGENT_DEVICE_RUNNER_MODAL_ACTION_IGNORED_EXCEPTION=%@",
-        exceptionMessage
-      )
-      return false
+      return true
     }
-    return include
   }
 
   private func preferredSystemModalTitle(_ element: XCUIElement) -> String {
@@ -186,8 +155,8 @@ extension RunnerTests {
       value: nil,
       rect: snapshotRect(from: element.frame),
       enabled: element.isEnabled,
-      focused: nil,
-      selected: nil,
+      focused: elementHasFocus(element) ? true : nil,
+      selected: element.isSelected ? true : nil,
       hittable: hittableOverride ?? element.isHittable,
       depth: depth,
       parentIndex: nil,
@@ -205,9 +174,8 @@ extension RunnerTests {
     depth: Int,
     hittableOverride: Bool? = nil
   ) -> SnapshotNode? {
-    var node: SnapshotNode?
-    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
-      node = makeSnapshotNode(
+    safely("MODAL_NODE") {
+      makeSnapshotNode(
         element: element,
         index: index,
         type: type,
@@ -216,14 +184,6 @@ extension RunnerTests {
         depth: depth,
         hittableOverride: hittableOverride
       )
-    })
-    if let exceptionMessage {
-      NSLog(
-        "AGENT_DEVICE_RUNNER_MODAL_NODE_IGNORED_EXCEPTION=%@",
-        exceptionMessage
-      )
-      return nil
     }
-    return node
   }
 }

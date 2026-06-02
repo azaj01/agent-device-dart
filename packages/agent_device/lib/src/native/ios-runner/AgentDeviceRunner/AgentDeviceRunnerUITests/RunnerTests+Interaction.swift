@@ -27,48 +27,7 @@ extension RunnerTests {
   struct SelectorElementMatch {
     let element: XCUIElement?
     let isAmbiguous: Bool
-  }
-
-  enum TextTypingRepairMode {
-    case none
-    case append
-    case replacement
-  }
-
-  enum TextEntryTiming {
-    static let focusTimeout: TimeInterval = 0.4
-    static let repairReadinessTimeout: TimeInterval = 1.0
-    static let readinessTimeout: TimeInterval = 2.0
-    static let hardwareKeyboardFallbackTimeout: TimeInterval = 0.35
-    static let pollInterval: TimeInterval = 0.02
-    static let warmupValueTimeout: TimeInterval = 0.4
-    static let verificationStabilityWindow: TimeInterval = 0.2
-  }
-
-  struct TextEntryResult {
-    let verified: Bool?
-    let repaired: Bool
-    let expectedText: String?
-    let observedText: String?
-  }
-
-  struct TextEntryTarget {
-    let element: XCUIElement?
-    let refreshPoint: CGPoint?
-    let prefersFocusedElement: Bool
-
-    func withElement(_ nextElement: XCUIElement?) -> TextEntryTarget {
-      guard let nextElement else {
-        return self
-      }
-      let frame = nextElement.frame
-      let point = frame.isEmpty ? refreshPoint : CGPoint(x: frame.midX, y: frame.midY)
-      return TextEntryTarget(
-        element: nextElement,
-        refreshPoint: point,
-        prefersFocusedElement: prefersFocusedElement
-      )
-    }
+    let usedNonHittableFallback: Bool
   }
 
   // MARK: - Navigation Gestures
@@ -177,10 +136,15 @@ extension RunnerTests {
     return element.exists ? element : nil
   }
 
-  func findElement(app: XCUIApplication, selectorKey: String, selectorValue: String) -> SelectorElementMatch {
+  func findElement(
+    app: XCUIApplication,
+    selectorKey: String,
+    selectorValue: String,
+    allowNonHittableFallback: Bool = false
+  ) -> SelectorElementMatch {
     let value = selectorValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty else {
-      return SelectorElementMatch(element: nil, isAmbiguous: false)
+      return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
     }
     let predicate: NSPredicate
     switch selectorKey {
@@ -193,21 +157,47 @@ extension RunnerTests {
     case "text":
       predicate = NSPredicate(format: "label ==[c] %@ OR identifier ==[c] %@ OR value ==[c] %@", value, value, value)
     default:
-      return SelectorElementMatch(element: nil, isAmbiguous: false)
+      return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
     }
 
     var matchedElement: XCUIElement?
+    var nonHittableElement: XCUIElement?
     let matches = app.descendants(matching: .any).matching(predicate).allElementsBoundByIndex
     for element in matches where element.exists {
-      guard element.isHittable else {
+      if !element.isHittable {
+        if allowNonHittableFallback && hasTappableFrame(app: app, element: element) {
+          guard nonHittableElement == nil else {
+            return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
+          }
+          nonHittableElement = element
+        }
         continue
       }
       guard matchedElement == nil else {
-        return SelectorElementMatch(element: nil, isAmbiguous: true)
+        return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
       }
       matchedElement = element
     }
-    return SelectorElementMatch(element: matchedElement, isAmbiguous: false)
+    if let matchedElement {
+      return SelectorElementMatch(element: matchedElement, isAmbiguous: false, usedNonHittableFallback: false)
+    }
+    return SelectorElementMatch(
+      element: nonHittableElement,
+      isAmbiguous: false,
+      usedNonHittableFallback: nonHittableElement != nil
+    )
+  }
+
+  private func hasTappableFrame(app: XCUIApplication, element: XCUIElement) -> Bool {
+    let frame = element.frame
+    if frame.isEmpty {
+      return false
+    }
+    let appFrame = app.frame
+    if appFrame.isEmpty {
+      return true
+    }
+    return appFrame.contains(CGPoint(x: frame.midX, y: frame.midY))
   }
 
   func queryElement(app: XCUIApplication, selectorKey: String, selectorValue: String) -> Response {
@@ -251,6 +241,13 @@ extension RunnerTests {
 
   func readTextAt(app: XCUIApplication, x: Double, y: Double) -> String? {
     let point = CGPoint(x: x, y: y)
+    let textInputCandidates = textInputCandidatesAt(app: app, point: point)
+    for element in textInputCandidates where prefersExpandedTextRead(element) {
+      if let text = readableText(for: element) {
+        return text
+      }
+    }
+
     let candidates = app.descendants(matching: .any).allElementsBoundByIndex
       .filter { element in
         element.exists && !element.frame.isEmpty && element.frame.contains(point)
@@ -283,30 +280,28 @@ extension RunnerTests {
     return nil
   }
 
-  func clearTextInput(_ element: XCUIElement) {
-#if !os(tvOS)
-    moveCaretToEnd(element: element)
-#endif
-    let count = estimatedDeleteCount(for: element)
-    let deletes = String(repeating: XCUIKeyboardKey.delete.rawValue, count: count)
-    element.typeText(deletes)
+  func textInputAt(app: XCUIApplication, x: Double, y: Double) -> XCUIElement? {
+    return textInputCandidatesAt(app: app, point: CGPoint(x: x, y: y)).first
   }
 
-  func textInputAt(app: XCUIApplication, x: Double, y: Double) -> XCUIElement? {
-    let point = CGPoint(x: x, y: y)
-    var matched: XCUIElement?
-    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
+  private func textInputCandidatesAt(app: XCUIApplication, point: CGPoint) -> [XCUIElement] {
+    safely("TEXT_INPUT_AT_POINT", []) {
+      // Query the text-input element types directly instead of enumerating the entire tree
+      // (app.descendants(.any).allElementsBoundByIndex snapshots every element and is ~10x
+      // slower — it dominated fill latency because resolveTextEntryElement re-runs this on
+      // each verify/repair poll once the focused field reference goes stale).
       // Prefer the smallest matching field so nested editable controls win over large containers.
-      let candidates = app.descendants(matching: .any).allElementsBoundByIndex
+      [
+        app.textFields,
+        app.secureTextFields,
+        app.searchFields,
+        app.textViews,
+      ]
+        .flatMap { $0.allElementsBoundByIndex }
         .filter { element in
           guard element.exists else { return false }
-          switch element.elementType {
-          case .textField, .secureTextField, .searchField, .textView:
-            let frame = element.frame
-            return !frame.isEmpty && frame.contains(point)
-          default:
-            return false
-          }
+          let frame = element.frame
+          return !frame.isEmpty && frameContainsPoint(frame, point, tolerance: 2)
         }
         .sorted { left, right in
           let leftArea = max(1, left.frame.width * left.frame.height)
@@ -322,496 +317,18 @@ extension RunnerTests {
           }
           return left.elementType.rawValue < right.elementType.rawValue
         }
-      matched = candidates.first
-    })
-    if let exceptionMessage {
-      NSLog(
-        "AGENT_DEVICE_RUNNER_TEXT_INPUT_AT_POINT_IGNORED_EXCEPTION=%@",
-        exceptionMessage
-      )
-      return nil
-    }
-    return matched
-  }
-
-  func focusedTextInput(app: XCUIApplication) -> XCUIElement? {
-    var focused: XCUIElement?
-    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
-      let candidate = app
-        .descendants(matching: .any)
-        .matching(NSPredicate(format: "hasKeyboardFocus == 1"))
-        .firstMatch
-      guard candidate.exists else { return }
-
-      switch candidate.elementType {
-      case .textField, .secureTextField, .searchField, .textView:
-        focused = candidate
-      default:
-        return
-      }
-    })
-    if let exceptionMessage {
-      NSLog(
-        "AGENT_DEVICE_RUNNER_FOCUSED_INPUT_QUERY_IGNORED_EXCEPTION=%@",
-        exceptionMessage
-      )
-      return nil
-    }
-    return focused
-  }
-
-  func stabilizeTextInputBeforeTyping(app: XCUIApplication, target: XCUIElement?) -> XCUIElement? {
-#if os(tvOS)
-    return target
-#else
-    let latest = target
-    let deadline = Date().addingTimeInterval(TextEntryTiming.focusTimeout)
-    while Date() < deadline {
-      if let focused = focusedTextInput(app: app) {
-        return focused
-      }
-      sleepFor(TextEntryTiming.pollInterval)
-    }
-    return latest
-#endif
-  }
-
-  func focusTextInputForTextEntry(app: XCUIApplication, x: Double?, y: Double?) -> TextEntryTarget {
-    guard let x, let y else {
-      let focused = waitForTextEntryReadiness(
-        app: app,
-        target: TextEntryTarget(
-          element: focusedTextInput(app: app),
-          refreshPoint: nil,
-          prefersFocusedElement: true
-        )
-      )
-      return TextEntryTarget(element: focused, refreshPoint: nil, prefersFocusedElement: true)
-    }
-
-    let target = textInputAt(app: app, x: x, y: y)
-    let requestedPoint = CGPoint(x: x, y: y)
-    if let target {
-      let frame = target.frame
-      if !frame.isEmpty {
-        _ = tapAt(app: app, x: frame.midX, y: frame.midY)
-      } else {
-        _ = tapAt(app: app, x: x, y: y)
-      }
-    } else {
-      _ = tapAt(app: app, x: x, y: y)
-    }
-    let stabilized = stabilizeTextInputBeforeTyping(app: app, target: target)
-    let element = waitForTextEntryReadiness(
-      app: app,
-      target: TextEntryTarget(
-        element: stabilized ?? target,
-        refreshPoint: requestedPoint,
-        prefersFocusedElement: false
-      )
-    ) ?? stabilized ?? target
-    return TextEntryTarget(
-      element: element,
-      refreshPoint: textEntryRefreshPoint(for: element) ?? requestedPoint,
-      prefersFocusedElement: false
-    )
-  }
-
-  func resolveTextEntryMode(_ command: Command) -> TextTypingRepairMode {
-    switch command.textEntryMode {
-    case "append":
-      return .append
-    case "replace":
-      return .replacement
-    default:
-      return command.clearFirst == true ? .replacement : .none
     }
   }
 
-  func typeTextReliably(
-    app: XCUIApplication,
-    target: TextEntryTarget,
-    text: String,
-    delaySeconds: Double,
-    repairMode: TextTypingRepairMode = .none
-  ) -> TextEntryResult {
-    guard !text.isEmpty else {
-      return TextEntryResult(verified: true, repaired: false, expectedText: "", observedText: "")
-    }
-    var activeTarget = target
-    let initialTarget = resolveTextEntryElement(app: app, target: activeTarget)
-    activeTarget = activeTarget.withElement(initialTarget)
-    let currentText = editableTextValue(for: initialTarget, treatingPlaceholderAsEmpty: true)
-    let initialText = repairMode == .append ? currentText : nil
-    let expectedText = expectedTextEntryValue(typedText: text, mode: repairMode, initialText: initialText)
-
-    if repairMode == .replacement {
-      guard let replacementTarget = initialTarget else {
-        return TextEntryResult(verified: nil, repaired: false, expectedText: expectedText, observedText: nil)
-      }
-      if currentText == nil || currentText?.isEmpty == false {
-        clearTextInput(replacementTarget)
-        activeTarget = activeTarget.withElement(replacementTarget)
-      }
-    }
-
-    func typeIntoCurrentTarget(_ value: String) -> XCUIElement? {
-      if let currentTarget = resolveTextEntryElement(app: app, target: activeTarget) {
-        app.typeText(value)
-        return currentTarget
-      } else {
-        app.typeText(value)
-        return resolveTextEntryElement(app: app, target: activeTarget)
-      }
-    }
-
-    func waitForWarmupValue(_ expectedValue: String?, target: TextEntryTarget) {
-      guard let expectedValue else {
-        sleepFor(TextEntryTiming.pollInterval)
-        return
-      }
-      let deadline = Date().addingTimeInterval(TextEntryTiming.warmupValueTimeout)
-      while Date() < deadline {
-        if editableTextValue(for: resolveTextEntryElement(app: app, target: target)) == expectedValue {
-          return
-        }
-        sleepFor(TextEntryTiming.pollInterval)
-      }
-    }
-
-    let characters = Array(text)
-    if delaySeconds > 0 && characters.count > 1 {
-      var typedTarget: XCUIElement?
-      for (index, character) in characters.enumerated() {
-        typedTarget = typeIntoCurrentTarget(String(character)) ?? typedTarget
-        if index + 1 < characters.count {
-          sleepFor(delaySeconds)
-        }
-      }
-      if repairMode == .none {
-        return TextEntryResult(verified: nil, repaired: false, expectedText: nil, observedText: nil)
-      }
-      let repairResult = repairTextEntryIfNeeded(
-        app: app,
-        target: activeTarget.withElement(typedTarget),
-        expectedText: expectedText,
-        repairMode: repairMode
-      )
-      return verifyTextEntry(
-        app: app,
-        target: activeTarget.withElement(typedTarget),
-        expectedText: expectedText,
-        repaired: repairResult.repaired
-      )
-    }
-
-    let typedTarget: XCUIElement?
-    if repairMode != .none && characters.count > 1 {
-      let firstCharacter = String(characters[0])
-      var firstTypedTarget = typeIntoCurrentTarget(firstCharacter)
-      activeTarget = activeTarget.withElement(firstTypedTarget)
-      let warmupExpectedText = expectedTextEntryValue(
-        typedText: firstCharacter,
-        mode: repairMode,
-        initialText: initialText
-      )
-      waitForWarmupValue(warmupExpectedText, target: activeTarget)
-      let remainingText = String(characters.dropFirst())
-      firstTypedTarget = typeIntoCurrentTarget(remainingText) ?? firstTypedTarget
-      typedTarget = firstTypedTarget
-    } else {
-      typedTarget = typeIntoCurrentTarget(text)
-    }
-    if repairMode == .none {
-      return TextEntryResult(verified: nil, repaired: false, expectedText: nil, observedText: nil)
-    }
-    let repairResult = repairTextEntryIfNeeded(
-      app: app,
-      target: activeTarget.withElement(typedTarget),
-      expectedText: expectedText,
-      repairMode: repairMode
-    )
-    return verifyTextEntry(
-      app: app,
-      target: activeTarget.withElement(typedTarget),
-      expectedText: expectedText,
-      repaired: repairResult.repaired
-    )
-  }
-
-  private func repairTextEntryIfNeeded(
-    app: XCUIApplication,
-    target: TextEntryTarget,
-    expectedText: String?,
-    repairMode: TextTypingRepairMode
-  ) -> TextEntryResult {
-#if os(iOS)
-    guard let targetElement = resolveTextEntryElement(app: app, target: target) else {
-      return TextEntryResult(verified: nil, repaired: false, expectedText: expectedText, observedText: nil)
-    }
-    guard let expectedText else {
-      let observedText = editableTextValue(for: targetElement)
-      return TextEntryResult(verified: nil, repaired: false, expectedText: nil, observedText: observedText)
-    }
-    guard shouldRepairTextEntry(
-      app: app,
-      target: target,
-      expectedText: expectedText,
-      repairMode: repairMode
-    ) else {
-      return verifyTextEntry(app: app, target: target, expectedText: expectedText, repaired: false)
-    }
-
-    guard let repairTarget = resolveTextEntryElement(app: app, target: target) else {
-      return TextEntryResult(verified: nil, repaired: false, expectedText: expectedText, observedText: nil)
-    }
-    let observedText = editableTextValue(for: repairTarget) ?? ""
-    NSLog(
-      "AGENT_DEVICE_RUNNER_REPAIR_TEXT_ENTRY expectedLength=%d observedLength=%d",
-      expectedText.count,
-      observedText.count
-    )
-    clearTextInput(repairTarget)
-    app.typeText(expectedText)
-    return verifyTextEntry(app: app, target: target, expectedText: expectedText, repaired: true)
-#else
-    return TextEntryResult(verified: nil, repaired: false, expectedText: expectedText, observedText: nil)
-#endif
-  }
-
-  private func verifyTextEntry(
-    app: XCUIApplication,
-    target: TextEntryTarget,
-    expectedText: String?,
-    repaired: Bool
-  ) -> TextEntryResult {
-    let targetElement = resolveTextEntryElement(app: app, target: target)
-    guard let expectedText else {
-      return TextEntryResult(
-        verified: nil,
-        repaired: repaired,
-        expectedText: nil,
-        observedText: editableTextValue(for: targetElement)
-      )
-    }
-    guard let observedText = editableTextValue(for: targetElement) else {
-      return TextEntryResult(verified: nil, repaired: repaired, expectedText: expectedText, observedText: nil)
-    }
-    guard observedText == expectedText else {
-      return TextEntryResult(
-        verified: false,
-        repaired: repaired,
-        expectedText: expectedText,
-        observedText: observedText
-      )
-    }
-    let stableDeadline = Date().addingTimeInterval(TextEntryTiming.verificationStabilityWindow)
-    var latestObservedText = observedText
-    while Date() < stableDeadline {
-      sleepFor(TextEntryTiming.pollInterval)
-      guard let nextObservedText = editableTextValue(for: resolveTextEntryElement(app: app, target: target)) else {
-        return TextEntryResult(verified: nil, repaired: repaired, expectedText: expectedText, observedText: nil)
-      }
-      latestObservedText = nextObservedText
-      guard nextObservedText == expectedText else {
-        return TextEntryResult(
-          verified: false,
-          repaired: repaired,
-          expectedText: expectedText,
-          observedText: nextObservedText
-        )
-      }
-    }
-    return TextEntryResult(
-      verified: true,
-      repaired: repaired,
-      expectedText: expectedText,
-      observedText: latestObservedText
-    )
-  }
-
-  private func expectedTextEntryValue(
-    typedText: String,
-    mode: TextTypingRepairMode,
-    initialText: String?
-  ) -> String? {
-    switch mode {
-    case .none:
-      return nil
-    case .append:
-      guard let initialText else {
-        return nil
-      }
-      return initialText + typedText
-    case .replacement:
-      return typedText
-    }
-  }
-
-  private func shouldRepairTextEntry(
-    app: XCUIApplication,
-    target: TextEntryTarget,
-    expectedText: String,
-    repairMode: TextTypingRepairMode
-  ) -> Bool {
-#if os(iOS)
-    var latestObservedText: String?
-    let deadline = Date().addingTimeInterval(TextEntryTiming.verificationStabilityWindow)
-    repeat {
-      guard let observedText = editableTextValue(for: resolveTextEntryElement(app: app, target: target)) else {
-        return false
-      }
-      if observedText == expectedText {
-        return false
-      }
-      latestObservedText = observedText
-      if !isRepairableTextEntryMismatch(
-        observedText: observedText,
-        expectedText: expectedText,
-        repairMode: repairMode
-      ) {
-        return false
-      }
-      sleepFor(TextEntryTiming.pollInterval)
-    } while Date() < deadline
-
-    guard let latestObservedText else {
-      return false
-    }
-    guard latestObservedText != expectedText else {
-      return false
-    }
-    return isRepairableTextEntryMismatch(
-      observedText: latestObservedText,
-      expectedText: expectedText,
-      repairMode: repairMode
-    )
-#else
-    return false
-#endif
-  }
-
-  private func isRepairableTextEntryMismatch(
-    observedText: String,
-    expectedText: String,
-    repairMode: TextTypingRepairMode
-  ) -> Bool {
-    guard observedText != expectedText else {
-      return false
-    }
-    if repairMode == .replacement {
-      return true
-    }
-    return observedText.isEmpty || isLikelyDroppedCharacterTextEntryMismatch(
-      observedText: observedText,
-      expectedText: expectedText
-    )
-  }
-
-  private func isLikelyDroppedCharacterTextEntryMismatch(observedText: String, expectedText: String) -> Bool {
-    guard observedText.count < expectedText.count else {
-      return false
-    }
-    let missingCharacterCount = expectedText.count - observedText.count
-    guard missingCharacterCount <= max(2, expectedText.count / 4) else {
-      return false
-    }
-    var expectedIndex = expectedText.startIndex
-    for character in observedText {
-      guard let matchIndex = expectedText[expectedIndex...].firstIndex(of: character) else {
-        return false
-      }
-      expectedIndex = expectedText.index(after: matchIndex)
-    }
-    return true
-  }
-
-  private func resolveTextEntryElement(app: XCUIApplication, target: TextEntryTarget) -> XCUIElement? {
-    if target.prefersFocusedElement {
-      if let focused = focusedTextInput(app: app) {
-        return focused
-      }
-      if let element = target.element, element.exists {
-        return element
-      }
-    } else {
-      if let element = target.element, element.exists {
-        return element
-      }
-    }
-    if let refreshPoint = target.refreshPoint,
-       let refreshed = textInputAt(app: app, x: refreshPoint.x, y: refreshPoint.y) {
-      return refreshed
-    }
-    if let focused = focusedTextInput(app: app) {
-      return focused
-    }
-    return nil
-  }
-
-  private func waitForTextEntryReadiness(
-    app: XCUIApplication,
-    target: TextEntryTarget,
-    timeout: TimeInterval = TextEntryTiming.readinessTimeout
-  ) -> XCUIElement? {
-#if os(iOS)
-    var latest = resolveTextEntryElement(app: app, target: target)
-    let deadline = Date().addingTimeInterval(timeout)
-    let hardwareKeyboardFallback = Date().addingTimeInterval(
-      min(TextEntryTiming.hardwareKeyboardFallbackTimeout, timeout)
-    )
-    var sawSoftwareKeyboard = false
-    while Date() < deadline {
-      if let focused = focusedTextInput(app: app) {
-        latest = focused
-        if isKeyboardVisible(app: app) {
-          return focused
-        }
-      }
-      sawSoftwareKeyboard = sawSoftwareKeyboard || keyboardElementExists(app: app)
-      if !sawSoftwareKeyboard && Date() >= hardwareKeyboardFallback && latest != nil {
-        return latest
-      }
-      sleepFor(TextEntryTiming.pollInterval)
-    }
-    return focusedTextInput(app: app) ?? latest
-#else
-    return resolveTextEntryElement(app: app, target: target)
-#endif
-  }
-
-  private func textEntryRefreshPoint(for element: XCUIElement?) -> CGPoint? {
-    guard let element else {
-      return nil
-    }
-    let frame = element.frame
-    guard !frame.isEmpty else {
-      return nil
-    }
-    return CGPoint(x: frame.midX, y: frame.midY)
+  private func frameContainsPoint(_ frame: CGRect, _ point: CGPoint, tolerance: CGFloat) -> Bool {
+    point.x >= frame.minX - tolerance
+      && point.x <= frame.maxX + tolerance
+      && point.y >= frame.minY - tolerance
+      && point.y <= frame.maxY + tolerance
   }
 
   func isKeyboardVisible(app: XCUIApplication) -> Bool {
     return visibleKeyboardFrame(app: app) != nil
-  }
-
-  private func keyboardElementExists(app: XCUIApplication) -> Bool {
-#if os(iOS)
-    var exists = false
-    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
-      exists = app.keyboards.firstMatch.exists
-    })
-    if let exceptionMessage {
-      NSLog(
-        "AGENT_DEVICE_RUNNER_KEYBOARD_EXISTS_IGNORED_EXCEPTION=%@",
-        exceptionMessage
-      )
-      return false
-    }
-    return exists
-#else
-    return false
-#endif
   }
 
   func dismissKeyboard(app: XCUIApplication) -> (wasVisible: Bool, dismissed: Bool, visible: Bool) {
@@ -839,7 +356,86 @@ extension RunnerTests {
       return (wasVisible: true, dismissed: !visible, visible: visible)
     }
 
+    if tapKeyboardReturnControl(app: app, allowCoordinateFallback: true) {
+      sleepFor(0.2)
+      let visible = isKeyboardVisible(app: app)
+      if !visible {
+        return (wasVisible: true, dismissed: true, visible: false)
+      }
+    }
+
     return (wasVisible: true, dismissed: false, visible: isKeyboardVisible(app: app))
+#endif
+  }
+
+  func pressKeyboardReturn(app: XCUIApplication) -> (wasVisible: Bool, pressed: Bool, visible: Bool) {
+#if os(tvOS)
+    return (wasVisible: false, pressed: pressTvRemote(.select), visible: false)
+#elseif os(iOS)
+    let wasVisible = isKeyboardVisible(app: app)
+    if tapKeyboardReturnControl(app: app) {
+      sleepFor(0.2)
+      return (wasVisible: wasVisible, pressed: true, visible: isKeyboardVisible(app: app))
+    }
+
+    var typed = false
+    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
+      app.typeText(XCUIKeyboardKey.return.rawValue)
+      typed = true
+    })
+    if let exceptionMessage {
+      NSLog(
+        "AGENT_DEVICE_RUNNER_KEYBOARD_RETURN_IGNORED_EXCEPTION=%@",
+        exceptionMessage
+      )
+      if let singleTarget = singleTextEntryElement(app: app) {
+        return pressKeyboardReturn(on: singleTarget, app: app, wasVisible: wasVisible)
+      }
+      return (wasVisible: wasVisible, pressed: false, visible: isKeyboardVisible(app: app))
+    }
+    sleepFor(0.2)
+    return (wasVisible: wasVisible, pressed: typed, visible: isKeyboardVisible(app: app))
+#else
+    return (wasVisible: false, pressed: false, visible: false)
+#endif
+  }
+
+  private func pressKeyboardReturn(
+    on element: XCUIElement,
+    app: XCUIApplication,
+    wasVisible: Bool
+  ) -> (wasVisible: Bool, pressed: Bool, visible: Bool) {
+    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
+      element.tap()
+      element.typeText(XCUIKeyboardKey.return.rawValue)
+    })
+    if let exceptionMessage {
+      NSLog(
+        "AGENT_DEVICE_RUNNER_KEYBOARD_RETURN_TARGET_IGNORED_EXCEPTION=%@",
+        exceptionMessage
+      )
+      return (wasVisible: wasVisible, pressed: false, visible: isKeyboardVisible(app: app))
+    }
+    sleepFor(0.2)
+    return (wasVisible: wasVisible, pressed: true, visible: isKeyboardVisible(app: app))
+  }
+
+  private func singleTextEntryElement(app: XCUIApplication) -> XCUIElement? {
+#if os(iOS)
+    let matches = safely("KEYBOARD_RETURN_TEXT_ENTRY_QUERY", []) {
+      app.descendants(matching: .any).allElementsBoundByIndex.filter { element in
+        guard element.exists else { return false }
+        switch element.elementType {
+        case .textField, .secureTextField, .searchField, .textView:
+          return true
+        default:
+          return false
+        }
+      }
+    }
+    return matches.count == 1 ? matches[0] : nil
+#else
+    return nil
 #endif
   }
 
@@ -880,73 +476,46 @@ extension RunnerTests {
 #endif
   }
 
+  private func tapKeyboardReturnControl(
+    app: XCUIApplication,
+    allowCoordinateFallback: Bool = false
+  ) -> Bool {
+#if os(iOS)
+    for label in ["return", "Return", "Enter", "Go", "Search", "Next", "Done", "Send", "Join"] {
+      let candidates = [
+        app.keyboards.buttons[label],
+        app.keyboards.keys[label],
+      ]
+      if let hittable = candidates.first(where: { $0.exists && $0.isHittable }) {
+        hittable.tap()
+        return true
+      }
+      if allowCoordinateFallback,
+         let keyboardFrame = visibleKeyboardFrame(app: app),
+         let framed = candidates.first(where: {
+           guard $0.exists else { return false }
+           let frame = $0.frame
+           return !frame.isEmpty && keyboardFrame.contains(CGPoint(x: frame.midX, y: frame.midY))
+         }) {
+        let frame = framed.frame
+        switch tapAt(app: app, x: frame.midX, y: frame.midY) {
+        case .performed:
+          return true
+        case .unsupported:
+          return false
+        }
+      }
+    }
+#endif
+    return false
+  }
+
   private func isKeyboardAccessoryControl(_ element: XCUIElement, keyboardFrame: CGRect) -> Bool {
     let frame = element.frame
     guard !frame.isEmpty && !keyboardFrame.isEmpty else {
       return false
     }
     return frame.intersects(keyboardFrame) || abs(frame.maxY - keyboardFrame.minY) <= 80
-  }
-
-  private func moveCaretToEnd(element: XCUIElement) {
-#if os(tvOS)
-    return
-#else
-    let frame = element.frame
-    guard !frame.isEmpty else {
-      element.tap()
-      return
-    }
-    let origin = element.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-    let target = origin.withOffset(
-      CGVector(dx: max(2, frame.width - 4), dy: max(2, frame.height / 2))
-    )
-    target.tap()
-#endif
-  }
-
-  private func estimatedDeleteCount(for element: XCUIElement) -> Int {
-    let valueText = normalizedElementText(element.value)
-    let base = valueText.isEmpty ? 24 : (valueText.count + 8)
-    return max(24, min(120, base))
-  }
-
-  private func normalizedElementText(_ value: Any?) -> String {
-    String(describing: value ?? "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-  }
-
-  private func editableTextValue(
-    for element: XCUIElement?,
-    treatingPlaceholderAsEmpty: Bool = false
-  ) -> String? {
-    guard let element else {
-      return nil
-    }
-    switch element.elementType {
-    case .textField, .searchField, .textView:
-      let value = String(describing: element.value ?? "")
-      if treatingPlaceholderAsEmpty && isPlaceholderValue(value, for: element) {
-        return ""
-      }
-      return value
-    case .secureTextField:
-      return nil
-    default:
-      return nil
-    }
-  }
-
-  private func isPlaceholderValue(_ value: String, for element: XCUIElement) -> Bool {
-    let normalizedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !normalizedValue.isEmpty else {
-      return false
-    }
-    guard let placeholder = element.placeholderValue?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !placeholder.isEmpty else {
-      return false
-    }
-    return normalizedValue == placeholder
   }
 
   private func readableText(for element: XCUIElement) -> String? {
@@ -1198,22 +767,13 @@ extension RunnerTests {
 
   private func visibleKeyboardFrame(app: XCUIApplication) -> CGRect? {
 #if os(iOS)
-    var frame: CGRect?
-    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
+    return safely("KEYBOARD_FRAME") {
       let keyboard = app.keyboards.firstMatch
-      guard keyboard.exists else { return }
+      guard keyboard.exists else { return nil }
       let keyboardFrame = keyboard.frame
-      guard !keyboardFrame.isEmpty else { return }
-      frame = keyboardFrame
-    })
-    if let exceptionMessage {
-      NSLog(
-        "AGENT_DEVICE_RUNNER_KEYBOARD_FRAME_IGNORED_EXCEPTION=%@",
-        exceptionMessage
-      )
-      return nil
+      guard !keyboardFrame.isEmpty else { return nil }
+      return keyboardFrame
     }
-    return frame
 #else
     return nil
 #endif
@@ -1263,49 +823,69 @@ extension RunnerTests {
   }
 
   func pinch(app: XCUIApplication, scale: Double, x: Double?, y: Double?) -> RunnerInteractionOutcome {
-    return performCoordinatePinch(app: app, scale: scale, x: x, y: y)
-  }
-
-  private func performCoordinatePinch(app: XCUIApplication, scale: Double, x: Double?, y: Double?) -> RunnerInteractionOutcome {
-#if os(tvOS)
-    return .unsupported("pinch is not supported on tvOS")
+#if os(iOS)
+    // A coordinate tap+drag is a single-finger gesture: React Native reads it as a pan
+    // and the pinch scale never changes (#629). Drive the two-finger XCTest synthesis
+    // path (the same one transformGesture uses) with zero translation/rotation so RN's
+    // pinch recognizer actually fires.
+    let frame = interactionRoot(app: app).frame
+    let centerX = x ?? Double(frame.midX)
+    let centerY = y ?? Double(frame.midY)
+    return transformGesture(
+      app: app,
+      x: centerX,
+      y: centerY,
+      dx: 0,
+      dy: 0,
+      scale: scale,
+      degrees: 0,
+      durationMs: 300
+    )
+#elseif os(tvOS)
+    return .unsupported(
+      message: "pinch is not supported on tvOS",
+      hint: "tvOS has no touch input; pinch requires a touchscreen (run on iOS)."
+    )
 #else
-    let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
-
-    // Use double-tap + drag gesture for reliable map zoom
-    // Zoom in (scale > 1): tap then drag UP
-    // Zoom out (scale < 1): tap then drag DOWN
-
-    // Determine center point (use provided x/y or screen center)
-    let centerX = x.map { $0 / target.frame.width } ?? 0.5
-    let centerY = y.map { $0 / target.frame.height } ?? 0.5
-    let center = target.coordinate(withNormalizedOffset: CGVector(dx: centerX, dy: centerY))
-
-    // Calculate drag distance based on scale (clamped to reasonable range)
-    // Larger scale = more drag distance
-    let dragAmount: CGFloat
-    if scale > 1.0 {
-      // Zoom in: drag up (negative Y direction in normalized coords)
-      dragAmount = min(0.4, CGFloat(scale - 1.0) * 0.2)
-    } else {
-      // Zoom out: drag down (positive Y direction)
-      dragAmount = min(0.4, CGFloat(1.0 - scale) * 0.4)
-    }
-
-    let endY = scale > 1.0 ? (centerY - Double(dragAmount)) : (centerY + Double(dragAmount))
-    let endPoint = target.coordinate(withNormalizedOffset: CGVector(dx: centerX, dy: max(0.1, min(0.9, endY))))
-
-    // Tap first (first tap of double-tap)
-    center.tap()
-
-    // Immediately press and drag (second tap + drag)
-    center.press(forDuration: 0.05, thenDragTo: endPoint)
-    return .performed
+    return .unsupported(
+      message: "pinch is not supported on macOS",
+      hint: "macOS automation has no multi-touch input; pinch requires a touchscreen (run on iOS)."
+    )
 #endif
   }
 
   func rotateGesture(app: XCUIApplication, degrees: Double, x: Double?, y: Double?, velocity: Double) -> RunnerInteractionOutcome {
-    return performCoordinateRotateGesture(app: app, degrees: degrees, x: x, y: y, velocity: velocity)
+#if os(iOS)
+    // Drive the two-finger XCTest synthesis path (the same one pinch/transformGesture use, #634)
+    // with zero translation/scale so React Native's rotation recognizer actually fires. The native
+    // XCUIElement.rotate(withVelocity:) injects a single synthetic rotation that RN's gesture
+    // handler does not read reliably — the same class of problem #629/#634 fixed for pinch.
+    // velocity is unused on iOS (synthesis speed is governed by durationMs); the wire contract
+    // keeps it for compatibility and direction is carried entirely by the sign of `degrees`.
+    let frame = interactionRoot(app: app).frame
+    let centerX = x ?? Double(frame.midX)
+    let centerY = y ?? Double(frame.midY)
+    return transformGesture(
+      app: app,
+      x: centerX,
+      y: centerY,
+      dx: 0,
+      dy: 0,
+      scale: 1,
+      degrees: degrees,
+      durationMs: 300
+    )
+#elseif os(tvOS)
+    return .unsupported(
+      message: "rotate-gesture is not supported on tvOS",
+      hint: "tvOS has no touch input; rotation gestures require a touchscreen (run on iOS)."
+    )
+#else
+    return .unsupported(
+      message: "rotate-gesture is not supported on macOS",
+      hint: "macOS automation has no multi-touch input; rotation gestures require a touchscreen (run on iOS)."
+    )
+#endif
   }
 
   func transformGesture(
@@ -1331,13 +911,22 @@ extension RunnerTests {
       radius: transformGestureRadius(frame: target.frame, scale: scale),
       durationMs: durationMs
     ) {
-      return .unsupported(message)
+      return .unsupported(
+        message: message,
+        hint: "This gesture uses private XCTest event-synthesis APIs; rebuild the runner with a supported Xcode (these APIs can change across Xcode versions)."
+      )
     }
     return .performed
 #elseif os(tvOS)
-    return .unsupported("transformGesture is not supported on tvOS")
+    return .unsupported(
+      message: "transformGesture is not supported on tvOS",
+      hint: "tvOS has no touch input; transform gestures require a touchscreen (run on iOS)."
+    )
 #else
-    return .unsupported("transformGesture is not supported on macOS")
+    return .unsupported(
+      message: "transformGesture is not supported on macOS",
+      hint: "macOS automation has no multi-touch input; transform gestures require a touchscreen (run on iOS)."
+    )
 #endif
   }
 
@@ -1347,19 +936,6 @@ extension RunnerTests {
     let minimumEndRadius = shorterSide * 0.08
     let scaleAdjustedRadius = scale < 1.0 ? max(frameRadius, minimumEndRadius / scale) : frameRadius
     return min(max(scaleAdjustedRadius, 48.0), shorterSide * 0.35)
-  }
-
-  private func performCoordinateRotateGesture(app: XCUIApplication, degrees: Double, x: Double?, y: Double?, velocity: Double) -> RunnerInteractionOutcome {
-#if os(iOS)
-    let target = app.windows.firstMatch.exists ? app.windows.firstMatch : app
-    let radians = CGFloat(degrees * .pi / 180.0)
-    target.rotate(radians, withVelocity: CGFloat(velocity))
-    return .performed
-#elseif os(tvOS)
-    return .unsupported("rotate-gesture is not supported on tvOS")
-#else
-    return .unsupported("rotate-gesture is not supported on macOS")
-#endif
   }
 
   private func interactionRoot(app: XCUIApplication) -> XCUIElement {
@@ -1372,7 +948,10 @@ extension RunnerTests {
 
   private func performCoordinateTap(app: XCUIApplication, x: Double, y: Double) -> RunnerInteractionOutcome {
 #if os(tvOS)
-    return .unsupported("coordinate tap is not supported on tvOS; move focus with swipe or scroll, then select the focused element")
+    return .unsupported(
+      message: "coordinate tap is not supported on tvOS; move focus with swipe or scroll, then select the focused element",
+      hint: "tvOS has no coordinate input; move focus with swipe/scroll to the target, then select it."
+    )
 #else
     interactionCoordinate(app: app, x: x, y: y).tap()
     return .performed
@@ -1381,7 +960,10 @@ extension RunnerTests {
 
   private func performCoordinateDoubleTap(app: XCUIApplication, x: Double, y: Double) -> RunnerInteractionOutcome {
 #if os(tvOS)
-    return .unsupported("coordinate double tap is not supported on tvOS; move focus with swipe or scroll, then select the focused element")
+    return .unsupported(
+      message: "coordinate double tap is not supported on tvOS; move focus with swipe or scroll, then select the focused element",
+      hint: "tvOS has no coordinate input; move focus with swipe/scroll to the target, then select it."
+    )
 #else
     interactionCoordinate(app: app, x: x, y: y).doubleTap()
     return .performed
@@ -1390,7 +972,10 @@ extension RunnerTests {
 
   private func performCoordinateLongPress(app: XCUIApplication, x: Double, y: Double, duration: TimeInterval) -> RunnerInteractionOutcome {
 #if os(tvOS)
-    return .unsupported("coordinate long press is not supported on tvOS; move focus with swipe or scroll, then long-select the focused element")
+    return .unsupported(
+      message: "coordinate long press is not supported on tvOS; move focus with swipe or scroll, then long-select the focused element",
+      hint: "tvOS has no coordinate input; move focus with swipe/scroll to the target, then long-select it."
+    )
 #else
     interactionCoordinate(app: app, x: x, y: y).press(forDuration: duration)
     return .performed
@@ -1406,7 +991,10 @@ extension RunnerTests {
     holdDuration: TimeInterval
   ) -> RunnerInteractionOutcome {
 #if os(tvOS)
-    return .unsupported("coordinate drag is not supported on tvOS")
+    return .unsupported(
+      message: "coordinate drag is not supported on tvOS",
+      hint: "tvOS has no coordinate input; use remote-driven swipe/scroll to move focus instead."
+    )
 #else
     let start = interactionCoordinate(app: app, x: x, y: y)
     let end = interactionCoordinate(app: app, x: x2, y: y2)
@@ -1416,14 +1004,18 @@ extension RunnerTests {
   }
 
 #if !os(tvOS)
-  // Note: kept as internal (not private) so slider code in RunnerTests+CommandExecution can call it directly.
-  func interactionCoordinate(app: XCUIApplication, x: Double, y: Double) -> XCUICoordinate {
+  private func interactionCoordinate(app: XCUIApplication, x: Double, y: Double) -> XCUICoordinate {
+#if os(iOS)
+    let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+    return origin.withOffset(CGVector(dx: x, dy: y))
+#else
     let root = interactionRoot(app: app)
     let origin = root.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
     let rootFrame = root.frame
     let offsetX = x - Double(rootFrame.origin.x)
     let offsetY = y - Double(rootFrame.origin.y)
     return origin.withOffset(CGVector(dx: offsetX, dy: offsetY))
+#endif
   }
 #endif
 

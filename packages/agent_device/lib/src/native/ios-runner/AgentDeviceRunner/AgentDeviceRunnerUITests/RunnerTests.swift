@@ -31,8 +31,12 @@ final class RunnerTests: XCTestCase {
   static let springboardBundleId = "com.apple.springboard"
   static let defaultRecordingFps: Int32 = 15
   var listener: NWListener?
+  // Dart-port deviation: raw POSIX-socket HTTP server used on physical iOS
+  // devices (see RunnerBSDSocketServer.swift / startBSDSocketServer).
   var bsdServer: RunnerBSDSocketServer?
   var doneExpectation: XCTestExpectation?
+  let transportQueue = DispatchQueue(label: "agent-device.runner.transport")
+  let commandExecutionQueue = DispatchQueue(label: "agent-device.runner.commands")
   let app = XCUIApplication()
   lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleId)
   var currentApp: XCUIApplication?
@@ -54,6 +58,7 @@ final class RunnerTests: XCTestCase {
   var needsPostSnapshotInteractionDelay = false
   var needsFirstInteractionDelay = false
   var activeRecording: ScreenRecorder?
+  let commandJournal = RunnerCommandJournal()
   let interactiveTypes: Set<XCUIElement.ElementType> = [
     .button,
     .cell,
@@ -91,24 +96,22 @@ final class RunnerTests: XCTestCase {
   @MainActor
   func testCommand() throws {
     doneExpectation = expectation(description: "agent-device command handled")
-    app.launch()
-    currentApp = app
-    let queue = DispatchQueue(label: "agent-device.runner")
+    NSLog("AGENT_DEVICE_RUNNER_HEADLESS_STARTUP=1")
     let desiredPort = RunnerEnv.resolvePort()
     NSLog("AGENT_DEVICE_RUNNER_DESIRED_PORT=%d", desiredPort)
 
-    // Physical iOS device: use a raw BSD-socket HTTP server. NWListener
-    // on iOS device gets wrapped by NECP (Network Extension Content
-    // Policy), which hides the bound port from external transports —
-    // including the CoreDevice IPv6 tunnel the host uses to reach the
-    // device. POSIX socket(2)/bind(2)/listen(2)/accept(2) bypasses
-    // NECP and the listener becomes reachable through the tunnel.
+    // Physical iOS device: use a raw BSD-socket HTTP server. NWListener on
+    // iOS device gets wrapped by NECP (Network Extension Content Policy),
+    // which hides the bound port from external transports — including the
+    // CoreDevice IPv6 tunnel the host uses to reach the device. POSIX
+    // socket(2)/bind(2)/listen(2)/accept(2) bypasses NECP and the listener
+    // becomes reachable through the tunnel.
     //
-    // Simulator + macOS: NWListener works (the sim shares the host
-    // network stack; macOS doesn't sandbox UI tests this way). Keep
-    // it for those targets so we don't lose framing/QoS niceties.
+    // Simulator + macOS: NWListener works (the sim shares the host network
+    // stack; macOS doesn't sandbox UI tests this way). Keep it for those
+    // targets so we don't lose framing/QoS niceties.
     #if targetEnvironment(simulator) || os(macOS)
-      try startNWListener(desiredPort: desiredPort, queue: queue)
+      try startNWListener(desiredPort: desiredPort)
     #else
       try startBSDSocketServer(desiredPort: desiredPort)
     #endif
@@ -126,10 +129,7 @@ final class RunnerTests: XCTestCase {
     }
   }
 
-  private func startNWListener(
-    desiredPort: UInt16,
-    queue: DispatchQueue
-  ) throws {
+  private func startNWListener(desiredPort: UInt16) throws {
     listener = try makeRunnerListener(desiredPort: desiredPort)
     listener?.stateUpdateHandler = { [weak self] state in
       switch state {
@@ -148,12 +148,14 @@ final class RunnerTests: XCTestCase {
       }
     }
     listener?.newConnectionHandler = { [weak self] conn in
-      conn.start(queue: queue)
-      self?.handle(connection: conn)
+      guard let self else { return }
+      conn.start(queue: self.transportQueue)
+      self.handle(connection: conn)
     }
-    listener?.start(queue: queue)
+    listener?.start(queue: transportQueue)
   }
 
+  // Dart-port deviation: BSD-socket server path for physical iOS devices.
   private func startBSDSocketServer(desiredPort: UInt16) throws {
     let server = RunnerBSDSocketServer(
       host: "127.0.0.1",
@@ -179,10 +181,11 @@ final class RunnerTests: XCTestCase {
     NSLog("AGENT_DEVICE_RUNNER_PORT=%d", server.port)
   }
 
-  /// BSD-socket variant of `handleRequestBody`. Mirrors the existing
-  /// NWConnection path: decode the JSON command, execute, encode the
-  /// response. Returns (status, body, shouldFinish) so the BSD server
-  /// can fulfil the doneExpectation when the shutdown command lands.
+  /// BSD-socket variant of the NWConnection request handler. Decodes the JSON
+  /// command, executes it, encodes the response. Returns (status, body,
+  /// shouldFinish) so the BSD server can fulfil the doneExpectation when the
+  /// shutdown command lands. The physical-device path bypasses the command
+  /// journal / status-recovery transport used on the simulator/macOS path.
   func handleRequestBodyForBSD(_ body: Data)
     -> (status: Int, body: Data, shouldFinish: Bool)
   {
@@ -196,9 +199,9 @@ final class RunnerTests: XCTestCase {
       let response = try execute(command: command)
       let isShutdown = command.command == .shutdown
       if isShutdown {
-        // NWConnection variant fulfils on the send-completion callback;
-        // the BSD path doesn't have that, so we do it after returning
-        // the response so the body still gets written.
+        // NWConnection variant fulfils on the send-completion callback; the
+        // BSD path doesn't have that, so we do it after returning the
+        // response so the body still gets written.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
           self?.bsdServer?.stop()
           self?.doneExpectation?.fulfill()

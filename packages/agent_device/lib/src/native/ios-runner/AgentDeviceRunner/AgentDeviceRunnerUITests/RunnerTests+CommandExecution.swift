@@ -13,19 +13,128 @@ extension RunnerTests {
     return (gestureStartUptimeMs, currentUptimeMs())
   }
 
-  private func unsupportedResponse(for outcome: RunnerInteractionOutcome) -> Response? {
+  func unsupportedResponse(for outcome: RunnerInteractionOutcome) -> Response? {
     switch outcome {
     case .performed:
       return nil
-    case .unsupported(let message):
+    case .unsupported(let message, let hint):
       return Response(
         ok: false,
-        error: ErrorPayload(code: "UNSUPPORTED_OPERATION", message: message)
+        error: ErrorPayload(code: "UNSUPPORTED_OPERATION", message: message, hint: hint)
       )
     }
   }
 
+  /// Optional visualization frame returned with a gesture response.
+  enum GestureFrame {
+    case none
+    case touch(TouchVisualizationFrame?)
+    case drag(DragVisualizationFrame)
+  }
+
+  /// Runs a gesture action with uniform timing capture. Touch gestures pass `idleTimeout: true`
+  /// (the default) to run inside the scroll idle-timeout + quiescence-skip wrapper; synthesis
+  /// gestures (pinch/rotate/transform) pass `false` because RunnerSynthesizedGesture governs its
+  /// own timing. Returns the captured timing and the action's outcome.
+  ///
+  /// NOTE: a new SYNTHESIS gesture must pass `idleTimeout: false` — the default `true` would wrap
+  /// it in the scroll idle-timeout/quiescence-skip path and change its runtime behavior.
+  private func performGesture(
+    _ app: XCUIApplication,
+    idleTimeout: Bool = true,
+    _ action: () -> RunnerInteractionOutcome
+  ) -> (timing: (gestureStartUptimeMs: Double, gestureEndUptimeMs: Double), outcome: RunnerInteractionOutcome) {
+    var outcome = RunnerInteractionOutcome.performed
+    let timing = measureGesture {
+      if idleTimeout {
+        withTemporaryScrollIdleTimeoutIfSupported(app) { outcome = action() }
+      } else {
+        outcome = action()
+      }
+    }
+    return (timing, outcome)
+  }
+
+  /// Single factory for the success payload every gesture returns (message + gesture timing +
+  /// an optional touch/drag visualization frame), so the field shape lives in one place.
+  private func gestureResponse(
+    message: String,
+    timing: (gestureStartUptimeMs: Double, gestureEndUptimeMs: Double),
+    frame: GestureFrame = .none
+  ) -> Response {
+    let data: DataPayload
+    switch frame {
+    case .none:
+      data = DataPayload(
+        message: message,
+        gestureStartUptimeMs: timing.gestureStartUptimeMs,
+        gestureEndUptimeMs: timing.gestureEndUptimeMs
+      )
+    case .touch(let f):
+      data = DataPayload(
+        message: message,
+        gestureStartUptimeMs: timing.gestureStartUptimeMs,
+        gestureEndUptimeMs: timing.gestureEndUptimeMs,
+        x: f?.x,
+        y: f?.y,
+        referenceWidth: f?.referenceWidth,
+        referenceHeight: f?.referenceHeight
+      )
+    case .drag(let f):
+      data = DataPayload(
+        message: message,
+        gestureStartUptimeMs: timing.gestureStartUptimeMs,
+        gestureEndUptimeMs: timing.gestureEndUptimeMs,
+        x: f.x,
+        y: f.y,
+        x2: f.x2,
+        y2: f.y2,
+        referenceWidth: f.referenceWidth,
+        referenceHeight: f.referenceHeight
+      )
+    }
+    return Response(ok: true, data: data)
+  }
+
   func execute(command: Command) throws -> Response {
+    if command.command == .status {
+      return executeStatus(command: command)
+    }
+    commandJournal.accept(command: command)
+    return try executeAccepted(command: command)
+  }
+
+  func executeAccepted(command: Command) throws -> Response {
+    commandJournal.start(command: command)
+    do {
+      let response = try executeDispatched(command: command)
+      commandJournal.finish(command: command, response: response)
+      return response
+    } catch {
+      commandJournal.fail(command: command, error: error)
+      throw error
+    }
+  }
+
+  func executeStatus(command: Command) -> Response {
+    guard
+      let statusCommandId = command.statusCommandId?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !statusCommandId.isEmpty
+    else {
+      return Response(
+        ok: false,
+        error: ErrorPayload(
+          code: "INVALID_ARGS",
+          message: "status requires statusCommandId",
+          hint: "Set statusCommandId to the commandId of the runner command to inspect."
+        )
+      )
+    }
+    return Response(ok: true, data: commandJournal.status(commandId: statusCommandId))
+  }
+
+  private func executeDispatched(command: Command) throws -> Response {
     if Thread.isMainThread {
       return try executeOnMainSafely(command: command)
     }
@@ -183,6 +292,8 @@ extension RunnerTests {
     }
 
     switch command.command {
+    case .status:
+      return executeStatus(command: command)
     case .shutdown:
       stopRecordingIfNeeded()
       return Response(ok: true, data: DataPayload(message: "shutdown"))
@@ -252,7 +363,12 @@ extension RunnerTests {
       )
     case .tap:
       if let selectorKey = command.selectorKey, let selectorValue = command.selectorValue {
-        let match = findElement(app: activeApp, selectorKey: selectorKey, selectorValue: selectorValue)
+        let match = findElement(
+          app: activeApp,
+          selectorKey: selectorKey,
+          selectorValue: selectorValue,
+          allowNonHittableFallback: command.allowNonHittableCoordinateFallback == true
+        )
         if match.isAmbiguous {
           return Response(ok: false, error: ErrorPayload(code: "AMBIGUOUS_MATCH", message: "selector matched multiple elements"))
         }
@@ -261,75 +377,46 @@ extension RunnerTests {
           let touchFrame = frame.isEmpty
             ? nil
             : resolvedTouchVisualizationFrame(app: activeApp, x: frame.midX, y: frame.midY)
-          var outcome = RunnerInteractionOutcome.performed
-          let timing = measureGesture {
-            withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-              outcome = activateElement(app: activeApp, element: element, action: "tap by selector")
+          let (timing, outcome) = performGesture(activeApp) {
+            if match.usedNonHittableFallback {
+              // Maestro compatibility: RN E2E backdoor controls can be 1x1 and
+              // reported non-hittable by XCTest, while Maestro still taps their
+              // resolved bounds. Keep this behind the explicit replay-only flag.
+              return tapAt(app: activeApp, x: frame.midX, y: frame.midY)
             }
+            return activateElement(app: activeApp, element: element, action: "tap by selector")
           }
           if let response = unsupportedResponse(for: outcome) {
             return response
           }
-          return Response(
-            ok: true,
-            data: DataPayload(
-              message: "tapped",
-              gestureStartUptimeMs: timing.gestureStartUptimeMs,
-              gestureEndUptimeMs: timing.gestureEndUptimeMs,
-              x: touchFrame?.x,
-              y: touchFrame?.y,
-              referenceWidth: touchFrame?.referenceWidth,
-              referenceHeight: touchFrame?.referenceHeight
-            )
+          waitForTextEntryReadinessAfterTap(app: activeApp, element: element)
+          return gestureResponse(
+            message: match.usedNonHittableFallback ? "tapped via non-hittable coordinate fallback" : "tapped",
+            timing: timing,
+            frame: .touch(touchFrame)
           )
         }
         return Response(ok: false, error: ErrorPayload(code: "ELEMENT_NOT_FOUND", message: "element not found"))
       }
       if let text = command.text {
         if let element = findElement(app: activeApp, text: text) {
-          var outcome = RunnerInteractionOutcome.performed
-          let timing = measureGesture {
-            withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-              outcome = activateElement(app: activeApp, element: element, action: "tap by text")
-            }
+          let (timing, outcome) = performGesture(activeApp) {
+            activateElement(app: activeApp, element: element, action: "tap by text")
           }
           if let response = unsupportedResponse(for: outcome) {
             return response
           }
-          return Response(
-            ok: true,
-            data: DataPayload(
-              message: "tapped",
-              gestureStartUptimeMs: timing.gestureStartUptimeMs,
-              gestureEndUptimeMs: timing.gestureEndUptimeMs
-            )
-          )
+          return gestureResponse(message: "tapped", timing: timing)
         }
         return Response(ok: false, error: ErrorPayload(message: "element not found"))
       }
       if let x = command.x, let y = command.y {
         let touchFrame = resolvedTouchVisualizationFrame(app: activeApp, x: x, y: y)
-        var outcome = RunnerInteractionOutcome.performed
-        let timing = measureGesture {
-          withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-            outcome = tapAt(app: activeApp, x: x, y: y)
-          }
-        }
+        let (timing, outcome) = performGesture(activeApp) { tapAt(app: activeApp, x: x, y: y) }
         if let response = unsupportedResponse(for: outcome) {
           return response
         }
-        return Response(
-          ok: true,
-          data: DataPayload(
-            message: "tapped",
-            gestureStartUptimeMs: timing.gestureStartUptimeMs,
-            gestureEndUptimeMs: timing.gestureEndUptimeMs,
-            x: touchFrame.x,
-            y: touchFrame.y,
-            referenceWidth: touchFrame.referenceWidth,
-            referenceHeight: touchFrame.referenceHeight
-          )
-        )
+        return gestureResponse(message: "tapped", timing: timing, frame: .touch(touchFrame))
       }
       return Response(ok: false, error: ErrorPayload(message: "tap requires text or x/y"))
     case .mouseClick:
@@ -338,6 +425,8 @@ extension RunnerTests {
       }
       let touchFrame = resolvedTouchVisualizationFrame(app: activeApp, x: x, y: y)
       do {
+        // mouseClick throws (it has no RunnerInteractionOutcome), so it keeps raw measureGesture
+        // and only routes the success payload through gestureResponse.
         var clickError: Error?
         let timing = measureGesture {
           do {
@@ -349,18 +438,7 @@ extension RunnerTests {
         if let clickError {
           throw clickError
         }
-        return Response(
-          ok: true,
-          data: DataPayload(
-            message: "clicked",
-            gestureStartUptimeMs: timing.gestureStartUptimeMs,
-            gestureEndUptimeMs: timing.gestureEndUptimeMs,
-            x: touchFrame.x,
-            y: touchFrame.y,
-            referenceWidth: touchFrame.referenceWidth,
-            referenceHeight: touchFrame.referenceHeight
-          )
-        )
+        return gestureResponse(message: "clicked", timing: timing, frame: .touch(touchFrame))
       } catch {
         return Response(ok: false, error: ErrorPayload(message: error.localizedDescription))
       }
@@ -373,84 +451,46 @@ extension RunnerTests {
       let doubleTap = command.doubleTap ?? false
       let touchFrame = resolvedTouchVisualizationFrame(app: activeApp, x: x, y: y)
       if doubleTap {
-        var outcome = RunnerInteractionOutcome.performed
-        let timing = measureGesture {
-          withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-            runSeries(count: count, pauseMs: intervalMs) { _ in
-              if case .performed = outcome {
-                outcome = doubleTapAt(app: activeApp, x: x, y: y)
-              }
+        let (timing, outcome) = performGesture(activeApp) {
+          var outcome = RunnerInteractionOutcome.performed
+          runSeries(count: count, pauseMs: intervalMs) { _ in
+            if case .performed = outcome {
+              outcome = doubleTapAt(app: activeApp, x: x, y: y)
             }
           }
+          return outcome
         }
         if let response = unsupportedResponse(for: outcome) {
           return response
         }
-        return Response(
-          ok: true,
-          data: DataPayload(
-            message: "tap series",
-            gestureStartUptimeMs: timing.gestureStartUptimeMs,
-            gestureEndUptimeMs: timing.gestureEndUptimeMs,
-            x: touchFrame.x,
-            y: touchFrame.y,
-            referenceWidth: touchFrame.referenceWidth,
-            referenceHeight: touchFrame.referenceHeight
-          )
-        )
+        return gestureResponse(message: "tap series", timing: timing, frame: .touch(touchFrame))
       }
-      var outcome = RunnerInteractionOutcome.performed
-      let timing = measureGesture {
-        withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-          runSeries(count: count, pauseMs: intervalMs) { _ in
-            if case .performed = outcome {
-              outcome = tapAt(app: activeApp, x: x, y: y)
-            }
+      let (timing, outcome) = performGesture(activeApp) {
+        var outcome = RunnerInteractionOutcome.performed
+        runSeries(count: count, pauseMs: intervalMs) { _ in
+          if case .performed = outcome {
+            outcome = tapAt(app: activeApp, x: x, y: y)
           }
         }
+        return outcome
       }
       if let response = unsupportedResponse(for: outcome) {
         return response
       }
-      return Response(
-        ok: true,
-        data: DataPayload(
-          message: "tap series",
-          gestureStartUptimeMs: timing.gestureStartUptimeMs,
-          gestureEndUptimeMs: timing.gestureEndUptimeMs,
-          x: touchFrame.x,
-          y: touchFrame.y,
-          referenceWidth: touchFrame.referenceWidth,
-          referenceHeight: touchFrame.referenceHeight
-        )
-      )
+      return gestureResponse(message: "tap series", timing: timing, frame: .touch(touchFrame))
     case .longPress:
       guard let x = command.x, let y = command.y else {
         return Response(ok: false, error: ErrorPayload(message: "longPress requires x and y"))
       }
       let duration = (command.durationMs ?? 800) / 1000.0
       let touchFrame = resolvedTouchVisualizationFrame(app: activeApp, x: x, y: y)
-      var outcome = RunnerInteractionOutcome.performed
-      let timing = measureGesture {
-        withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-          outcome = longPressAt(app: activeApp, x: x, y: y, duration: duration)
-        }
+      let (timing, outcome) = performGesture(activeApp) {
+        longPressAt(app: activeApp, x: x, y: y, duration: duration)
       }
       if let response = unsupportedResponse(for: outcome) {
         return response
       }
-      return Response(
-        ok: true,
-        data: DataPayload(
-          message: "long pressed",
-          gestureStartUptimeMs: timing.gestureStartUptimeMs,
-          gestureEndUptimeMs: timing.gestureEndUptimeMs,
-          x: touchFrame.x,
-          y: touchFrame.y,
-          referenceWidth: touchFrame.referenceWidth,
-          referenceHeight: touchFrame.referenceHeight
-        )
-      )
+      return gestureResponse(message: "long pressed", timing: timing, frame: .touch(touchFrame))
     case .drag:
       guard let x = command.x, let y = command.y, let x2 = command.x2, let y2 = command.y2 else {
         return Response(ok: false, error: ErrorPayload(message: "drag requires x, y, x2, and y2"))
@@ -464,36 +504,20 @@ extension RunnerTests {
         x2: dragPoints.x2,
         y2: dragPoints.y2
       )
-      var outcome = RunnerInteractionOutcome.performed
-      let timing = measureGesture {
-        withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-          outcome = dragAt(
-            app: activeApp,
-            x: dragPoints.x,
-            y: dragPoints.y,
-            x2: dragPoints.x2,
-            y2: dragPoints.y2,
-            holdDuration: holdDuration
-          )
-        }
+      let (timing, outcome) = performGesture(activeApp) {
+        dragAt(
+          app: activeApp,
+          x: dragPoints.x,
+          y: dragPoints.y,
+          x2: dragPoints.x2,
+          y2: dragPoints.y2,
+          holdDuration: holdDuration
+        )
       }
       if let response = unsupportedResponse(for: outcome) {
         return response
       }
-      return Response(
-        ok: true,
-        data: DataPayload(
-          message: "dragged",
-          gestureStartUptimeMs: timing.gestureStartUptimeMs,
-          gestureEndUptimeMs: timing.gestureEndUptimeMs,
-          x: dragFrame.x,
-          y: dragFrame.y,
-          x2: dragFrame.x2,
-          y2: dragFrame.y2,
-          referenceWidth: dragFrame.referenceWidth,
-          referenceHeight: dragFrame.referenceHeight
-        )
-      )
+      return gestureResponse(message: "dragged", timing: timing, frame: .drag(dragFrame))
     case .dragSeries:
       guard let x = command.x, let y = command.y, let x2 = command.x2, let y2 = command.y2 else {
         return Response(ok: false, error: ErrorPayload(message: "dragSeries requires x, y, x2, and y2"))
@@ -506,47 +530,39 @@ extension RunnerTests {
       }
       let holdDuration = min(max((command.durationMs ?? 60) / 1000.0, 0.016), 10.0)
       let dragPoints = keyboardAvoidingDragPoints(app: activeApp, x: x, y: y, x2: x2, y2: y2)
-      var outcome = RunnerInteractionOutcome.performed
-      let timing = measureGesture {
-        withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-          runSeries(count: count, pauseMs: pauseMs) { idx in
-            guard case .performed = outcome else {
-              return
-            }
-            let reverse = pattern == "ping-pong" && (idx % 2 == 1)
-            if reverse {
-              outcome = dragAt(
-                app: activeApp,
-                x: dragPoints.x2,
-                y: dragPoints.y2,
-                x2: dragPoints.x,
-                y2: dragPoints.y,
-                holdDuration: holdDuration
-              )
-            } else {
-              outcome = dragAt(
-                app: activeApp,
-                x: dragPoints.x,
-                y: dragPoints.y,
-                x2: dragPoints.x2,
-                y2: dragPoints.y2,
-                holdDuration: holdDuration
-              )
-            }
+      let (timing, outcome) = performGesture(activeApp) {
+        var outcome = RunnerInteractionOutcome.performed
+        runSeries(count: count, pauseMs: pauseMs) { idx in
+          guard case .performed = outcome else {
+            return
+          }
+          let reverse = pattern == "ping-pong" && (idx % 2 == 1)
+          if reverse {
+            outcome = dragAt(
+              app: activeApp,
+              x: dragPoints.x2,
+              y: dragPoints.y2,
+              x2: dragPoints.x,
+              y2: dragPoints.y,
+              holdDuration: holdDuration
+            )
+          } else {
+            outcome = dragAt(
+              app: activeApp,
+              x: dragPoints.x,
+              y: dragPoints.y,
+              x2: dragPoints.x2,
+              y2: dragPoints.y2,
+              holdDuration: holdDuration
+            )
           }
         }
+        return outcome
       }
       if let response = unsupportedResponse(for: outcome) {
         return response
       }
-      return Response(
-        ok: true,
-        data: DataPayload(
-          message: "drag series",
-          gestureStartUptimeMs: timing.gestureStartUptimeMs,
-          gestureEndUptimeMs: timing.gestureEndUptimeMs
-        )
-      )
+      return gestureResponse(message: "drag series", timing: timing)
     case .remotePress:
       guard let button = tvRemoteButton(from: command.remoteButton) else {
         return Response(ok: false, error: ErrorPayload(message: "remotePress requires remoteButton"))
@@ -580,32 +596,18 @@ extension RunnerTests {
       guard let direction = command.direction else {
         return Response(ok: false, error: ErrorPayload(message: "swipe requires direction"))
       }
+      // swipe returns an optional frame (tvOS-only) rather than a RunnerInteractionOutcome, so it
+      // keeps raw measureGesture and only routes the success payload through gestureResponse.
       var executedFrame: DragVisualizationFrame?
       let timing = measureGesture {
         withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
-          executedFrame = swipe(
-            app: activeApp,
-            direction: direction
-          )
+          executedFrame = swipe(app: activeApp, direction: direction)
         }
       }
       guard let dragFrame = executedFrame else {
         return Response(ok: false, error: ErrorPayload(message: "swipe is only supported on tvOS"))
       }
-      return Response(
-        ok: true,
-        data: DataPayload(
-          message: "swiped",
-          gestureStartUptimeMs: timing.gestureStartUptimeMs,
-          gestureEndUptimeMs: timing.gestureEndUptimeMs,
-          x: dragFrame.x,
-          y: dragFrame.y,
-          x2: dragFrame.x2,
-          y2: dragFrame.y2,
-          referenceWidth: dragFrame.referenceWidth,
-          referenceHeight: dragFrame.referenceHeight
-        )
-      )
+      return gestureResponse(message: "swiped", timing: timing, frame: .drag(dragFrame))
     case .findText:
       guard let text = command.text else {
         return Response(ok: false, error: ErrorPayload(message: "findText requires text"))
@@ -633,12 +635,26 @@ extension RunnerTests {
         scope: command.scope,
         raw: command.raw ?? false
       )
-      if options.raw {
+      do {
+        let payload: DataPayload
+        if options.raw {
+          payload = try snapshotRaw(app: activeApp, options: options)
+        } else {
+          payload = try snapshotFast(app: activeApp, options: options)
+        }
         needsPostSnapshotInteractionDelay = true
-        return Response(ok: true, data: snapshotRaw(app: activeApp, options: options))
+        return Response(ok: true, data: payload)
+      } catch let failure as SnapshotCaptureFailure {
+        // Other thrown errors fall through to executeOnMainSafely's generic error response.
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: failure.code,
+            message: failure.message,
+            hint: failure.hint
+          )
+        )
       }
-      needsPostSnapshotInteractionDelay = true
-      return Response(ok: true, data: snapshotFast(app: activeApp, options: options))
     case .screenshot:
       let screenshot: XCUIScreenshot
 #if os(macOS)
@@ -729,53 +745,42 @@ extension RunnerTests {
           dismissed: result.dismissed
         )
       )
-    case .alert:
-      let action = (command.action ?? "get").lowercased()
-      let alert = activeApp.alerts.firstMatch
-      if !alert.exists {
-        return Response(ok: false, error: ErrorPayload(message: "alert not found"))
-      }
-      if action == "accept" {
-        guard let button = alert.buttons.allElementsBoundByIndex.first else {
-          return Response(ok: false, error: ErrorPayload(message: "alert accept button not found"))
-        }
-        let outcome = activateElement(app: activeApp, element: button, action: "alert accept")
-        if let response = unsupportedResponse(for: outcome) {
-          return response
-        }
-        return Response(ok: true, data: DataPayload(message: "accepted"))
-      }
-      if action == "dismiss" {
-        guard let button = alert.buttons.allElementsBoundByIndex.last else {
-          return Response(ok: false, error: ErrorPayload(message: "alert dismiss button not found"))
-        }
-        let outcome = activateElement(app: activeApp, element: button, action: "alert dismiss")
-        if let response = unsupportedResponse(for: outcome) {
-          return response
-        }
-        return Response(ok: true, data: DataPayload(message: "dismissed"))
-      }
-      let buttonLabels = alert.buttons.allElementsBoundByIndex.map { $0.label }
-      return Response(ok: true, data: DataPayload(message: alert.label, items: buttonLabels))
-    case .pinch:
-      guard let scale = command.scale, scale > 0 else {
-        return Response(ok: false, error: ErrorPayload(message: "pinch requires scale > 0"))
-      }
-      var outcome = RunnerInteractionOutcome.performed
-      let timing = measureGesture {
-        outcome = pinch(app: activeApp, scale: scale, x: command.x, y: command.y)
-      }
-      if let response = unsupportedResponse(for: outcome) {
-        return response
+    case .keyboardReturn:
+      let result = pressKeyboardReturn(app: activeApp)
+      if !result.pressed {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "UNSUPPORTED_OPERATION",
+            message: "Unable to press the iOS keyboard return key"
+          )
+        )
       }
       return Response(
         ok: true,
         data: DataPayload(
-          message: "pinched",
-          gestureStartUptimeMs: timing.gestureStartUptimeMs,
-          gestureEndUptimeMs: timing.gestureEndUptimeMs
+          message: "keyboardReturn",
+          visible: result.visible,
+          wasVisible: result.wasVisible
         )
       )
+    case .alert:
+      let action = (command.action ?? "get").lowercased()
+      guard let alert = resolveAlert(app: activeApp) else {
+        return Response(ok: false, error: ErrorPayload(message: "alert not found"))
+      }
+      return handleAlert(alert, action: action)
+    case .pinch:
+      guard let scale = command.scale, scale > 0 else {
+        return Response(ok: false, error: ErrorPayload(message: "pinch requires scale > 0"))
+      }
+      let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
+        pinch(app: activeApp, scale: scale, x: command.x, y: command.y)
+      }
+      if let response = unsupportedResponse(for: outcome) {
+        return response
+      }
+      return gestureResponse(message: "pinched", timing: timing)
     case .rotateGesture:
       guard let degrees = command.degrees, degrees.isFinite else {
         return Response(ok: false, error: ErrorPayload(message: "rotateGesture requires degrees"))
@@ -784,9 +789,8 @@ extension RunnerTests {
       guard velocity.isFinite && velocity != 0 else {
         return Response(ok: false, error: ErrorPayload(message: "rotateGesture velocity must be non-zero"))
       }
-      var rotateOutcome = RunnerInteractionOutcome.performed
-      let rotateTiming = measureGesture {
-        rotateOutcome = rotateGesture(
+      let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
+        rotateGesture(
           app: activeApp,
           degrees: degrees,
           x: command.x,
@@ -794,17 +798,10 @@ extension RunnerTests {
           velocity: velocity
         )
       }
-      if let response = unsupportedResponse(for: rotateOutcome) {
+      if let response = unsupportedResponse(for: outcome) {
         return response
       }
-      return Response(
-        ok: true,
-        data: DataPayload(
-          message: "rotatedGesture",
-          gestureStartUptimeMs: rotateTiming.gestureStartUptimeMs,
-          gestureEndUptimeMs: rotateTiming.gestureEndUptimeMs
-        )
-      )
+      return gestureResponse(message: "rotatedGesture", timing: timing)
     case .transformGesture:
       guard
         let x = command.x,
@@ -828,9 +825,8 @@ extension RunnerTests {
       guard durationMs.isFinite && durationMs >= 16 else {
         return Response(ok: false, error: ErrorPayload(message: "transformGesture durationMs must be >= 16"))
       }
-      var transformOutcome = RunnerInteractionOutcome.performed
-      let transformTiming = measureGesture {
-        transformOutcome = transformGesture(
+      let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
+        transformGesture(
           app: activeApp,
           x: x,
           y: y,
@@ -841,125 +837,10 @@ extension RunnerTests {
           durationMs: durationMs
         )
       }
-      if let response = unsupportedResponse(for: transformOutcome) {
+      if let response = unsupportedResponse(for: outcome) {
         return response
       }
-      return Response(
-        ok: true,
-        data: DataPayload(
-          message: "transformedGesture",
-          gestureStartUptimeMs: transformTiming.gestureStartUptimeMs,
-          gestureEndUptimeMs: transformTiming.gestureEndUptimeMs
-        )
-      )
-    case .adjustSlider:
-#if os(tvOS)
-      return Response(ok: false, error: ErrorPayload(
-        code: "UNSUPPORTED_OPERATION",
-        message: "adjustSlider is not supported on tvOS"
-      ))
-#else
-      guard let x = command.x, let y = command.y else {
-        return Response(ok: false, error: ErrorPayload(
-          message: "adjustSlider requires x/y coordinates"
-        ))
-      }
-      let coord = interactionCoordinate(app: activeApp, x: x, y: y)
-      let point = CGPoint(x: x, y: y)
-      if let position = command.normalizedPosition {
-        let clamped = min(max(position, 0), 1)
-        // Try native slider first.
-        let posSliders = activeApp.sliders.allElementsBoundByIndex.filter {
-          $0.exists && $0.frame.contains(point)
-        }
-        if let slider = posSliders.first {
-          slider.adjust(toNormalizedSliderPosition: CGFloat(clamped))
-          return Response(ok: true, data: DataPayload(message: "adjusted to \(clamped) via slider"))
-        }
-        // Fallback: drag from current thumb position to target position.
-        // Rect comes from Dart (snapshot node rect) or app snapshot.
-        let info = findSliderInfoNear(snapshot: try? activeApp.snapshot(), x: x, y: y)
-        let rect: CGRect? = {
-          if let rx = command.rectX, let ry = command.rectY,
-             let rw = command.rectW, let rh = command.rectH {
-            return CGRect(x: rx, y: ry, width: rw, height: rh)
-          }
-          return info?.rect
-        }()
-        let currentNorm = info?.currentNormalized ?? 0.5
-        if let rect = rect {
-          let isVertical = rect.height > 80
-          let fromX: Double, fromY: Double, toX: Double, toY: Double
-          if isVertical {
-            fromX = Double(rect.midX)
-            fromY = Double(rect.origin.y) + Double(rect.height) * (1.0 - currentNorm)
-            toX = fromX
-            toY = Double(rect.origin.y) + Double(rect.height) * (1.0 - clamped)
-          } else {
-            fromX = Double(rect.origin.x) + Double(rect.width) * currentNorm
-            fromY = Double(rect.midY)
-            toX = Double(rect.origin.x) + Double(rect.width) * clamped
-            toY = fromY
-          }
-          let fromCoord = interactionCoordinate(app: activeApp, x: fromX, y: fromY)
-          let toCoord = interactionCoordinate(app: activeApp, x: toX, y: toY)
-          fromCoord.press(forDuration: 0.1, thenDragTo: toCoord, withVelocity: .slow, thenHoldForDuration: 0.1)
-          return Response(ok: true, data: DataPayload(message: "adjusted to \(clamped) via drag"))
-        }
-        return Response(ok: false, error: ErrorPayload(
-          message: "no slider found at (\(x), \(y))"
-        ))
-      }
-      let steps = command.steps ?? 1
-      let action = (command.action ?? "increment").lowercased()
-
-      // 1. Native slider — most reliable. Uses adjust(toNormalizedSliderPosition:)
-      //    which works for both horizontal and vertical UISlider elements.
-      let sliders = activeApp.sliders.allElementsBoundByIndex.filter {
-        $0.exists && $0.frame.contains(point)
-      }
-      if let slider = sliders.first {
-        let totalSteps = max(Double(slider.frame.width > slider.frame.height ? 12 : 24), 2)
-        let stepSize = 1.0 / totalSteps
-        for _ in 0..<abs(steps) {
-          let current = slider.normalizedSliderPosition
-          let next = action == "decrement"
-            ? max(0, current - CGFloat(stepSize))
-            : min(1, current + CGFloat(stepSize))
-          slider.adjust(toNormalizedSliderPosition: next)
-        }
-        return Response(ok: true, data: DataPayload(
-          message: "\(action) by \(abs(steps)) step(s) via slider"
-        ))
-      }
-
-      // 2. Picker wheel — tap one row above/below center for next/previous value.
-      let pickerWheel = findPickerWheelNear(app: activeApp, x: x, y: y)
-      if let wheel = pickerWheel {
-        for _ in 0..<abs(steps) {
-          let dy: CGFloat = action == "decrement" ? -15 : 15
-          wheel.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .withOffset(CGVector(dx: 0, dy: dy))
-            .tap()
-        }
-        return Response(ok: true, data: DataPayload(
-          message: "\(action) by \(abs(steps)) step(s) via picker wheel"
-        ))
-      }
-
-      // 3. Fallback: tap offset from center. Direction depends on the
-      //    element's aspect ratio — horizontal elements get left/right
-      //    taps, vertical elements get up/down taps.
-      for _ in 0..<abs(steps) {
-        let offset = action == "decrement" ? -36.0 : 36.0
-        let tapCoord = coord.withOffset(CGVector(dx: offset, dy: 0))
-        tapCoord.tap()
-        usleep(200_000)
-      }
-      return Response(ok: true, data: DataPayload(
-        message: "\(action) by \(abs(steps)) step(s)"
-      ))
-#endif
+      return gestureResponse(message: "transformedGesture", timing: timing)
     }
   }
 
@@ -969,7 +850,27 @@ extension RunnerTests {
     }
     let delaySeconds = Double(max(command.delayMs ?? 0, 0)) / 1000.0
     let textEntryMode = resolveTextEntryMode(command)
-    let target = focusTextInputForTextEntry(app: activeApp, x: command.x, y: command.y)
+    let target: TextEntryTarget
+    if let selectorKey = command.selectorKey, let selectorValue = command.selectorValue {
+      let match = findElement(
+        app: activeApp,
+        selectorKey: selectorKey,
+        selectorValue: selectorValue,
+        allowNonHittableFallback: command.allowNonHittableCoordinateFallback == true
+      )
+      if match.isAmbiguous {
+        return Response(ok: false, error: ErrorPayload(code: "AMBIGUOUS_MATCH", message: "selector matched multiple elements"))
+      }
+      guard let element = match.element else {
+        return Response(ok: false, error: ErrorPayload(code: "NO_MATCH", message: "selector did not match an element"))
+      }
+      guard isTextEntryElement(element) else {
+        return Response(ok: false, error: ErrorPayload(code: "INVALID_TARGET", message: "selector did not match a text input"))
+      }
+      target = focusTextInputForTextEntry(app: activeApp, element: element)
+    } else {
+      target = focusTextInputForTextEntry(app: activeApp, x: command.x, y: command.y)
+    }
     if textEntryMode == .replacement {
       guard target.element != nil else {
         let message =
@@ -997,72 +898,17 @@ extension RunnerTests {
         )
       )
     }
-    return Response(ok: true, data: DataPayload(message: textResult.repaired ? "typed after repair" : "typed"))
-  }
-
-  private struct SliderInfo {
-    let rect: CGRect
-    let currentNormalized: Double?
-  }
-
-  private func findSliderInfoNear(snapshot: XCUIElementSnapshot?, x: Double, y: Double) -> SliderInfo? {
-    guard let snapshot = snapshot else { return nil }
-    let point = CGPoint(x: x, y: y)
-    var bestNode: XCUIElementSnapshot?
-    var bestArea = Double.infinity
-
-    func visit(_ node: XCUIElementSnapshot) {
-      let frame = node.frame
-      if !frame.isNull && !frame.isEmpty && frame.contains(point) {
-        let area = Double(frame.width * frame.height)
-        if area < bestArea {
-          bestArea = area
-          bestNode = node
-        }
-      }
-      for child in node.children {
-        if let child = child as? XCUIElementSnapshot {
-          visit(child)
-        }
-      }
-    }
-
-    visit(snapshot)
-    guard let node = bestNode else { return nil }
-    // Parse current normalized value from the accessibility value
-    // (e.g. "50%", "0.35", "80%").
-    let currentNorm = parseNormalizedValue(node.value as? String ?? node.label)
-    return SliderInfo(rect: node.frame, currentNormalized: currentNorm)
-  }
-
-  private func parseNormalizedValue(_ text: String) -> Double? {
-    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.hasSuffix("%") {
-      let numStr = trimmed.dropLast()
-      if let num = Double(numStr) { return num / 100.0 }
-    }
-    if let num = Double(trimmed), num >= 0, num <= 1 { return num }
-    return nil
-  }
-
-  private func findPickerWheelNear(app: XCUIApplication, x: Double, y: Double) -> XCUIElement? {
-    let point = CGPoint(x: x, y: y)
-    let wheels = app.pickerWheels.allElementsBoundByIndex
-    // Find the wheel whose frame contains the target point, or the
-    // closest wheel within 50pt.
-    if let exact = wheels.first(where: { $0.exists && $0.frame.contains(point) }) {
-      return exact
-    }
-    var bestWheel: XCUIElement?
-    var bestDistance = 50.0
-    for wheel in wheels where wheel.exists {
-      let center = CGPoint(x: wheel.frame.midX, y: wheel.frame.midY)
-      let dist = hypot(center.x - point.x, center.y - point.y)
-      if dist < bestDistance {
-        bestDistance = dist
-        bestWheel = wheel
-      }
-    }
-    return bestWheel
+    let point = target.refreshPoint
+    let frame = activeApp.frame
+    return Response(
+      ok: true,
+      data: DataPayload(
+        message: textResult.repaired ? "typed after repair" : "typed",
+        x: point.map { Double($0.x) },
+        y: point.map { Double($0.y) },
+        referenceWidth: frame.isEmpty ? nil : Double(frame.width),
+        referenceHeight: frame.isEmpty ? nil : Double(frame.height)
+      )
+    )
   }
 }
