@@ -164,7 +164,7 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `0932ad56` | ci: publish MCP registry metadata (#627) | n/a | — | CI/MCP |
 | `5d68483f` | test: add Maestro provider integration guards (#620) | skipped | — | Maestro (out of scope) |
 | `3283e5e3` | ci: skip core CI for docs-only PRs (#619) | n/a | — | CI |
-| `3522aa32` | fix: chunk long Android recordings (#617) | pending | — | Android recording chunking (Step 4) |
+| `3522aa32` | fix: chunk long Android recordings (#617) | n/a | — | All daemon record-trace handlers (chunked-upload orchestration); daemon-less port records to a single file |
 | `7909290a` | refactor: share Maestro target matching primitives (#622) | skipped | — | Maestro (out of scope) |
 | `ea69ebd4` | refactor: converge Maestro input handling (#623) | skipped | — | Maestro (out of scope) |
 | `10fc86f1` | refactor: converge Maestro gesture handling (#624) | skipped | — | Maestro (out of scope) |
@@ -213,5 +213,5 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `3847f71c` | perf: avoid android hierarchy probe for scroll (#671) | n/a | — | Dart `scrollAndroid` already uses cheap `getAndroidScreenSize`; no hierarchy-probe path exists |
 | `6247a3d4` | 0.16.10 | n/a | — | Version bump |
 | `0313262a` | docs: clarify physical device signing help (#672) | n/a | — | Docs |
-| `6f637d0e` | fix: filter covered Android snapshot surfaces (#675) | pending | — | Adds `drawingOrder` z-order parse + covered-surface occlusion filter in `ui-hierarchy.ts` → Dart `android/snapshot.dart` (~121 lines; incl. negative-bounds regex fix) |
-| `041b4822` | feat: add iOS runner prepare command (#673) | pending | — | New iOS runner prepare command (Step 4) |
+| `6f637d0e` | fix: filter covered Android snapshot surfaces (#675) | ported | (Step 3) | `ui_hierarchy.dart`: parse `visible-to-user`/`drawing-order`; `_pruneAndroidInvisibleSubtrees` + `_pruneAndroidCoveredSubtrees` (≥90% area occlusion by higher drawing-order sibling w/ agent-visible content) wired into `parseUiHierarchyTree`; negative-bounds regex fix. 4 unit tests. Dart uses in-place `removeWhere` (immutable node, growable children) vs upstream reassign. |
+| `041b4822` | feat: add iOS runner prepare command (#673) | n/a | — | Daemon session-prepare handler (pre-warms runner in the long-lived daemon); daemon-less port already launches/reuses the runner on first command. No Swift/runner-protocol change. Optional thin `prepare` CLI nicety deferred. |

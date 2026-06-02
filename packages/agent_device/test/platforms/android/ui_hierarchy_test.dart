@@ -69,6 +69,57 @@ void main() {
       expect(tree.children[0].children[0].label, 'Click me');
     });
 
+    test('parseBounds parses negative coordinates', () {
+      final rect = parseBounds('[-50,-10][100,200]');
+      expect(rect, isNotNull);
+      expect(rect!.x, -50);
+      expect(rect.y, -10);
+      expect(rect.width, 150);
+      expect(rect.height, 210);
+    });
+
+    test('readNodeAttributes extracts visible-to-user and drawing-order', () {
+      final attrs = readNodeAttributes(
+        '<node class="View" visible-to-user="false" drawing-order="3" />',
+      );
+      expect(attrs.visibleToUser, false);
+      expect(attrs.drawingOrder, 3);
+    });
+
+    test('parseUiHierarchyTree prunes visible-to-user="false" subtrees', () {
+      final xml = '''
+        <hierarchy>
+          <node class="FrameLayout" bounds="[0,0][1080,1920]">
+            <node class="View" text="Shown" bounds="[0,0][100,100]" visible-to-user="true" />
+            <node class="View" text="Gone" bounds="[0,0][100,100]" visible-to-user="false" />
+          </node>
+        </hierarchy>
+      ''';
+      final frame = parseUiHierarchyTree(xml).children[0];
+      expect(frame.children, hasLength(1));
+      expect(frame.children[0].label, 'Shown');
+    });
+
+    test('parseUiHierarchyTree drops a sibling covered by a higher '
+        'drawing-order sibling', () {
+      final xml = '''
+        <hierarchy>
+          <node class="FrameLayout" bounds="[0,0][1000,1000]">
+            <node class="View" resource-id="bg" bounds="[0,0][1000,1000]" drawing-order="0" visible-to-user="true">
+              <node class="Button" text="Background" bounds="[0,0][1000,1000]" clickable="true" drawing-order="0" visible-to-user="true" />
+            </node>
+            <node class="View" resource-id="fg" bounds="[0,0][1000,1000]" drawing-order="1" visible-to-user="true">
+              <node class="Button" text="Foreground" bounds="[0,0][1000,1000]" clickable="true" drawing-order="1" visible-to-user="true" />
+            </node>
+          </node>
+        </hierarchy>
+      ''';
+      final frame = parseUiHierarchyTree(xml).children[0];
+      // Background sibling (lower drawing order, fully covered) is removed.
+      expect(frame.children, hasLength(1));
+      expect(frame.children[0].identifier, 'fg');
+    });
+
     test('parseUiHierarchyTree handles self-closing nodes', () {
       final xml = '''
         <hierarchy>

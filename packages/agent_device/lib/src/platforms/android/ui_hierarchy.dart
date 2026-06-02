@@ -1,5 +1,7 @@
 // Port of agent-device/src/platforms/android/ui-hierarchy.ts
 
+import 'dart:math' as math;
+
 import '../../snapshot/snapshot.dart';
 import '../../utils/scrollable.dart';
 
@@ -31,6 +33,8 @@ class AndroidUiNodeMetadata {
   final bool? focusable;
   final bool? focused;
   final bool? password;
+  final bool? visibleToUser;
+  final int? drawingOrder;
 
   const AndroidUiNodeMetadata({
     required this.text,
@@ -45,6 +49,8 @@ class AndroidUiNodeMetadata {
     this.focusable,
     this.focused,
     this.password,
+    this.visibleToUser,
+    this.drawingOrder,
   });
 }
 
@@ -68,6 +74,12 @@ AndroidUiNodeMetadata _readAndroidUiNodeMetadata(String node) {
     return raw == 'true';
   }
 
+  int? intAttr(String name) {
+    final raw = getAttr(name);
+    if (raw == null) return null;
+    return int.tryParse(raw.trim());
+  }
+
   final bounds = getAttr('bounds');
   final rect = _parseBounds(bounds);
   return AndroidUiNodeMetadata(
@@ -83,6 +95,8 @@ AndroidUiNodeMetadata _readAndroidUiNodeMetadata(String node) {
     focusable: boolAttr('focusable'),
     focused: boolAttr('focused'),
     password: boolAttr('password'),
+    visibleToUser: boolAttr('visible-to-user'),
+    drawingOrder: intAttr('drawing-order'),
   );
 }
 
@@ -96,6 +110,14 @@ class AndroidUiHierarchy {
   final Rect? rect;
   final bool? enabled;
   final bool? hittable;
+
+  /// Whether UIAutomator reports the node as visible to the user
+  /// (`visible-to-user`). Null when the attribute is absent.
+  final bool? visibleToUser;
+
+  /// Sibling draw order (`drawing-order`); higher draws on top. Null when
+  /// absent. Used to drop surfaces covered by a higher-order sibling.
+  final int? drawingOrder;
   final int depth;
   final int? parentIndex;
   final bool? hiddenContentAbove;
@@ -116,6 +138,8 @@ class AndroidUiHierarchy {
     required this.hiddenContentAbove,
     required this.hiddenContentBelow,
     required this.children,
+    this.visibleToUser,
+    this.drawingOrder,
   });
 }
 
@@ -304,7 +328,9 @@ Rect? parseBounds(String? bounds) => _parseBounds(bounds);
 
 Rect? _parseBounds(String? bounds) {
   if (bounds == null || bounds.isEmpty) return null;
-  final match = RegExp(r'\[(\d+),(\d+)\]\[(\d+),(\d+)\]').firstMatch(bounds);
+  final match = RegExp(
+    r'\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]',
+  ).firstMatch(bounds);
   if (match == null) return null;
 
   final x1 = double.parse(match.group(1)!);
@@ -370,6 +396,8 @@ AndroidUiHierarchy parseUiHierarchyTree(String xml) {
       rect: attrs.rect,
       enabled: attrs.enabled,
       hittable: attrs.clickable ?? attrs.focusable,
+      visibleToUser: attrs.visibleToUser,
+      drawingOrder: attrs.drawingOrder,
       depth: parent.depth + 1,
       parentIndex: null,
       hiddenContentAbove: null,
@@ -384,7 +412,125 @@ AndroidUiHierarchy parseUiHierarchyTree(String xml) {
     }
   }
 
+  // Raw Android snapshots are uncollapsed but still agent-visible. The helper
+  // can expose aria-hidden / no-hide-descendants children, so prune nodes
+  // Android marks not-visible-to-user. (Ported from upstream #675.)
+  _pruneAndroidInvisibleSubtrees(root);
+  // UiAutomation can expose covered surfaces (e.g. background React Navigation
+  // screens) in the same accessibility window. If a higher drawing-order
+  // sibling fully covers a node, agents should only see the foreground one.
+  _pruneAndroidCoveredSubtrees(root, <AndroidUiHierarchy, bool>{});
+
   return root;
+}
+
+/// Remove subtrees Android marks `visible-to-user="false"`.
+void _pruneAndroidInvisibleSubtrees(AndroidUiHierarchy node) {
+  node.children.removeWhere((child) => child.visibleToUser == false);
+  for (final child in node.children) {
+    _pruneAndroidInvisibleSubtrees(child);
+  }
+}
+
+/// Drop sibling subtrees fully covered (≥90% area) by a higher drawing-order
+/// sibling that carries agent-visible content. Depth-first so nested overlaps
+/// resolve before their parents are evaluated.
+void _pruneAndroidCoveredSubtrees(
+  AndroidUiHierarchy node,
+  Map<AndroidUiHierarchy, bool> agentVisibleContentMemo,
+) {
+  for (final child in node.children) {
+    _pruneAndroidCoveredSubtrees(child, agentVisibleContentMemo);
+  }
+  if (node.children.length < 2) return;
+  final coveringCandidates = node.children
+      .where((c) => _canCoverSibling(c, agentVisibleContentMemo))
+      .toList();
+  if (coveringCandidates.isEmpty) return;
+  node.children.removeWhere(
+    (child) => _isCoveredByHigherDrawingOrderSibling(child, coveringCandidates),
+  );
+}
+
+bool _isCoveredByHigherDrawingOrderSibling(
+  AndroidUiHierarchy node,
+  List<AndroidUiHierarchy> coveringCandidates,
+) {
+  final rect = node.rect;
+  final order = node.drawingOrder;
+  if (node.visibleToUser == false || order == null || rect == null) {
+    return false;
+  }
+  if (!(rect.width > 0 && rect.height > 0)) return false;
+  for (final sibling in coveringCandidates) {
+    final siblingOrder = sibling.drawingOrder;
+    if (identical(sibling, node) ||
+        siblingOrder == null ||
+        siblingOrder <= order) {
+      continue;
+    }
+    if (_rectCoverage(sibling.rect!, rect) >= 0.9) return true;
+  }
+  return false;
+}
+
+bool _canCoverSibling(
+  AndroidUiHierarchy node,
+  Map<AndroidUiHierarchy, bool> memo,
+) {
+  return node.visibleToUser != false &&
+      node.drawingOrder != null &&
+      _hasPositiveRect(node) &&
+      _hasAgentVisibleContent(node, memo);
+}
+
+bool _hasAgentVisibleContent(
+  AndroidUiHierarchy node,
+  Map<AndroidUiHierarchy, bool> memo,
+) {
+  final cached = memo[node];
+  if (cached != null) return cached;
+  final result = _computeHasAgentVisibleContent(node, memo);
+  memo[node] = result;
+  return result;
+}
+
+bool _computeHasAgentVisibleContent(
+  AndroidUiHierarchy node,
+  Map<AndroidUiHierarchy, bool> memo,
+) {
+  if (node.visibleToUser == false) return false;
+  if (node.hittable ?? false) return true;
+  final label = node.label?.trim() ?? '';
+  if (label.isNotEmpty && !_isGenericAndroidId(label)) return true;
+  final identifier = node.identifier?.trim() ?? '';
+  if (identifier.isNotEmpty && !_isGenericAndroidId(identifier)) return true;
+  return node.children.any((child) => _hasAgentVisibleContent(child, memo));
+}
+
+bool _hasPositiveRect(AndroidUiHierarchy node) {
+  final rect = node.rect;
+  return rect != null && rect.width > 0 && rect.height > 0;
+}
+
+double _rectCoverage(Rect coveringRect, Rect targetRect) {
+  final targetArea = targetRect.width * targetRect.height;
+  if (targetArea <= 0) return 0;
+  return _intersectionArea(coveringRect, targetRect) / targetArea;
+}
+
+double _intersectionArea(Rect left, Rect right) {
+  final xOverlap = math.max(
+    0.0,
+    math.min(left.x + left.width, right.x + right.width) -
+        math.max(left.x, right.x),
+  );
+  final yOverlap = math.max(
+    0.0,
+    math.min(left.y + left.height, right.y + right.height) -
+        math.max(left.y, right.y),
+  );
+  return xOverlap * yOverlap;
 }
 
 /// Check if a node should be included in the snapshot.
