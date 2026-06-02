@@ -140,3 +140,78 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `819d7dc8` | feat: expose structured MCP command tools (#593) | n/a | — | MCP server only |
 | `25c7ade7` | test: remove 151 unit tests fully covered by integration tests (#595) | n/a | — | TS test infra |
 | `9a6bb6f7` | 0.15.2 | n/a | — | Version bump |
+| `136d313a` | build: enable noUncheckedIndexedAccess (#600) | n/a | — | TS tooling |
+| `ee57e1b1` | fix: improve Maestro test suite replay (#601) | skipped | — | Maestro (out of scope) |
+| `2212062d` | 0.16.0 | n/a | — | Version bump |
+| `af206140` | 0.16.1 | n/a | — | Version bump |
+| `7a2428e5` | ci: reduce duplicated runner work (#602) | n/a | — | CI |
+| `233df070` | ci: skip platform smoke for docs-only PRs (#604) | n/a | — | CI |
+| `b2a39d23` | ci: gate PR preview builds (#603) | n/a | — | CI |
+| `5083d045` | ci: stop waiting for preview pages build (#607) | n/a | — | CI |
+| `46784f2e` | fix: internalize xml parsing (#606) | n/a | — | Dart uses `package:xml` |
+| `0bbb06eb` | refactor: vendor png codec (#609) | n/a | — | Dart has own png util / `image` |
+| `99e97c87` | feat: stream replay test progress (#605) | pending | — | Replay progress streaming (low priority) |
+| `0dead15c` | fix: improve maestro text tap targets (#610) | skipped | — | Maestro (out of scope) |
+| `34713df1` | 0.16.2 | n/a | — | Version bump |
+| `ab760b6c` | fix: apply app icon to iOS UI test runner (#611) | n/a | — | Dart port ships its own Assets.xcassets |
+| `e1b8686e` | fix: hint sparse snapshot fallback (#614) | n/a | — | Output-formatting layer (no Dart equivalent) |
+| `9a026bf2` | 0.16.3 | n/a | — | Version bump |
+| `d087a62d` | fix: improve Maestro Android reliability and snapshot speed (#612) | skipped | — | Maestro (out of scope) |
+| `c78ccea5` | 0.16.4 | n/a | — | Version bump |
+| `434bf70a` | fix: stabilize Maestro React Navigation flows (#618) | skipped | — | Maestro/RN (out of scope) |
+| `f74f4e0f` | 0.16.5 | n/a | — | Version bump |
+| `14bbcf4f` | docs: map Maestro compatibility debt (#621) | n/a | — | Docs |
+| `0932ad56` | ci: publish MCP registry metadata (#627) | n/a | — | CI/MCP |
+| `5d68483f` | test: add Maestro provider integration guards (#620) | skipped | — | Maestro (out of scope) |
+| `3283e5e3` | ci: skip core CI for docs-only PRs (#619) | n/a | — | CI |
+| `3522aa32` | fix: chunk long Android recordings (#617) | pending | — | Android recording chunking (Step 4) |
+| `7909290a` | refactor: share Maestro target matching primitives (#622) | skipped | — | Maestro (out of scope) |
+| `ea69ebd4` | refactor: converge Maestro input handling (#623) | skipped | — | Maestro (out of scope) |
+| `10fc86f1` | refactor: converge Maestro gesture handling (#624) | skipped | — | Maestro (out of scope) |
+| `7f2c2b72` | refactor: converge Maestro assertion waits (#625) | skipped | — | Maestro (out of scope) |
+| `10501b0c` | fix: preserve remote config for interaction commands (#616) | n/a | — | Daemon remote-config |
+| `ae73b77b` | refactor: narrow Maestro flow runtime bridge (#626) | skipped | — | Maestro (out of scope) |
+| `dc37f869` | feat: expose iOS launch args for open (#598) | pending | — | iOS launch args feature (Step 4) |
+| `b7ca4fbc` | feat: forward --launch-args to adb shell am start on Android (#599) | pending | — | Android launch args feature (Step 4) |
+| `8e1f8a9f` | perf: lazy load daemon handlers and report bundle size (#608) | n/a | — | Daemon internals |
+| `ece193e7` | fix: improve React Navigation Maestro reliability (#628) | skipped | — | Maestro/RN (out of scope) |
+| `3cb126ea` | fix: avoid iOS edge lane for in-page swipes (#631) | pending | — | Targets swipe-preset lane logic not yet ported to `scroll_gesture.dart` |
+| `1bdd9eeb` | 0.16.6 | n/a | — | Version bump |
+| `efc0b213` | 0.16.7 | n/a | — | Version bump |
+| `45cfad5c` | feat: e2e command perf benchmark harness + nightly CI (#630) | n/a | — | Dart port has its own `benchmark/` harness + CI |
+| `a8bec058` | perf(ios): make get text ~80x faster for non-editable elements (#632) | n/a | — | Dart `getAttr('text')` already returns snapshot text directly; no slow `readTextAt` re-read path exists |
+| `73c057a4` | perf+fix(ios): faster text entry + fix fill mis-navigation (#633) | ported | `0ef1010` | Swift `RunnerTests+Interaction.swift` synced in Step 1 end-state sync |
+| `fa4e2d5e` | fix(ios): pinch via two-finger synthesis (#634) | ported | `0ef1010` | Swift synced in Step 1 |
+| `2068f604` | fix: improve ios selector reads and maestro reliability (#636) | ported | `0ef1010` | Swift `+Interaction`/`+TvRemote` synced in Step 1; daemon/Maestro parts n/a |
+| `b09e7d37` | fix: preserve iOS AX snapshot failures (#639) | ported | `0ef1010` | Swift `+Snapshot`/`+CommandExecution`/`+Models` synced in Step 1; `runner-session.ts` n/a (daemon) |
+| `096785b7` | fix: clean up recording stop and snapshot traversal (#640) | pending | — | iOS presentation traversal (`tree.ts`→`presentation_tree.dart`/`ios_presentation.dart`); Swift part synced in Step 1 |
+| `66ec92f8` | fix: retry no-op maestro taps (#644) | skipped | — | Maestro (out of scope) |
+| `5492cf46` | refactor(ios): single CommandTraits table for runner command classification (#642) | ported | `0ef1010` | Swift synced in Step 1 |
+| `4f8e0af8` | fix: improve maestro test output (#647) | skipped | — | Maestro (out of scope) |
+| `5d2b2ed5` | fix: harden react native overlay dismissal (#641) | skipped | — | RN (out of scope) |
+| `eb3ca302` | fix: normalize maestro loading ellipsis (#648) | skipped | — | Maestro (out of scope) |
+| `3785a175` | fix(ios): unify multi-touch gestures on two-finger synthesis + hinted unsupported errors (#645) | ported | `0ef1010` | Swift synced in Step 1 |
+| `9e653720` | fix: resolve test-app dependabot alerts (#649) | n/a | — | Deps |
+| `2546ca31` | fix: dismiss RN overlays in Maestro compat (#650) | skipped | — | Maestro/RN (out of scope) |
+| `37618c98` | 0.16.8 | n/a | — | Version bump |
+| `d5c94b02` | fix: improve maestro test output (#652) | skipped | — | Maestro (out of scope) |
+| `4d016db3` | refactor(ios): extract the text-entry engine into RunnerTests+TextEntry.swift (#651) | ported | `0ef1010` | New Swift file synced in Step 1 |
+| `ef3c5121` | fix: align Maestro assertVisible timeout (#653) | skipped | — | Maestro (out of scope) |
+| `be5081d4` | 0.16.9 | n/a | — | Version bump |
+| `25d5a2a7` | fix: bound iOS simulator app termination (#654) | n/a | — | Dart `closeIosApp` already bounds terminate at 15s |
+| `b1aaa3a4` | chore: update glama mcp metadata (#655) | n/a | — | MCP metadata |
+| `e96de318` | fix: stabilize android perf harness setup (#657) | n/a | — | Perf harness (Dart has own) |
+| `cbe725d4` | refactor(ios): gesture-response factory + performGesture wrapper in CommandExecution (#659) | ported | `0ef1010` | Swift synced in Step 1 |
+| `3f65124e` | refactor: add iOS runner lifecycle protocol (#658) | n/a | — | Daemon-oriented runner-session lifecycle (daemon-less port keeps FileMutex model) |
+| `daaf71a6` | refactor(ios): safely(tag:default:) wrapper (#660) | ported | `0ef1010` | Swift synced in Step 1 |
+| `57cd3f3a` | perf: recover iOS runner responses by status (#661) | n/a | — | Daemon status-recovery; daemon-less port serializes via FileMutex (runner-side journal/status synced in Step 1, client recovery not needed) |
+| `f2ef6887` | docs(ios): idleTimeout guardrail notes (#664) | n/a | — | Docs |
+| `3ae2472d` | fix: keep iOS runner status transport visible (#663) | n/a | — | Daemon status transport (see `57cd3f3a`) |
+| `7e30a830` | fix: tune iOS runner response retention (#665) | n/a | — | Daemon response retention (see `57cd3f3a`) |
+| `7f035f34` | fix: reduce ios runner invalidation after status recovery (#666) | n/a | — | Daemon status-recovery tuning (see `57cd3f3a`) |
+| `66119e21` | perf: adapt ios runner uptime preflight (#662) | n/a | — | Daemon runner-session preflight (daemon-less port uses tolerant `isAlive`) |
+| `3847f71c` | perf: avoid android hierarchy probe for scroll (#671) | n/a | — | Dart `scrollAndroid` already uses cheap `getAndroidScreenSize`; no hierarchy-probe path exists |
+| `6247a3d4` | 0.16.10 | n/a | — | Version bump |
+| `0313262a` | docs: clarify physical device signing help (#672) | n/a | — | Docs |
+| `6f637d0e` | fix: filter covered Android snapshot surfaces (#675) | pending | — | Adds `drawingOrder` z-order parse + covered-surface occlusion filter in `ui-hierarchy.ts` → Dart `android/snapshot.dart` (~121 lines; incl. negative-bounds regex fix) |
+| `041b4822` | feat: add iOS runner prepare command (#673) | pending | — | New iOS runner prepare command (Step 4) |
