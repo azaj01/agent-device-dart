@@ -171,8 +171,8 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `7f2c2b72` | refactor: converge Maestro assertion waits (#625) | skipped | — | Maestro (out of scope) |
 | `10501b0c` | fix: preserve remote config for interaction commands (#616) | n/a | — | Daemon remote-config |
 | `ae73b77b` | refactor: narrow Maestro flow runtime bridge (#626) | skipped | — | Maestro (out of scope) |
-| `dc37f869` | feat: expose iOS launch args for open (#598) | pending | — | iOS launch args feature (Step 4) |
-| `b7ca4fbc` | feat: forward --launch-args to adb shell am start on Android (#599) | pending | — | Android launch args feature (Step 4) |
+| `dc37f869` | feat: expose iOS launch args for open (#598) | ported | (Step 4) | `BackendOpenOptions.launchArgs` → `openIosApp`/`_buildIosSimulatorLaunchArgs` (sim, appended after bundle id) + `launchIosDeviceProcess` (devicectl); `open --launch-args` CLI multi-option |
+| `b7ca4fbc` | feat: forward --launch-args to adb shell am start on Android (#599) | ported | (Step 4) | `openAndroidApp(launchArgs:)` appends `...?launchArgs` to all 5 `am start` paths (deep-link, intent, package+activity, primary, resolved-component); no UNSUPPORTED guard existed to remove |
 | `8e1f8a9f` | perf: lazy load daemon handlers and report bundle size (#608) | n/a | — | Daemon internals |
 | `ece193e7` | fix: improve React Navigation Maestro reliability (#628) | skipped | — | Maestro/RN (out of scope) |
 | `3cb126ea` | fix: avoid iOS edge lane for in-page swipes (#631) | pending | — | Targets swipe-preset lane logic not yet ported to `scroll_gesture.dart` |

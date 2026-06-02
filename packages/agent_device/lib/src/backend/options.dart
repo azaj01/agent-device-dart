@@ -431,7 +431,17 @@ class BackendOpenOptions {
   /// non-simulator targets.
   final String? launchConsole;
 
-  const BackendOpenOptions({this.relaunch, this.launchConsole});
+  /// Arguments forwarded verbatim to the app's launch. iOS: appended after the
+  /// bundle id on `simctl launch` / `devicectl process launch`. Android:
+  /// appended to `am start` (e.g. `--es key value` for typed Intent extras).
+  /// An empty list launches with no extra args.
+  final List<String>? launchArgs;
+
+  const BackendOpenOptions({
+    this.relaunch,
+    this.launchConsole,
+    this.launchArgs,
+  });
 }
 
 // ============================================================================

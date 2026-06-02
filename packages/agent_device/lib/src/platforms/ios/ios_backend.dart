@@ -1482,9 +1482,14 @@ class IosBackend extends Backend {
     final udid = _udid(ctx);
     final kind = await _resolveKind(udid);
     if (kind == 'device') {
-      await launchIosDeviceProcess(udid, bundleId);
+      await launchIosDeviceProcess(udid, bundleId, launchArgs: options?.launchArgs);
     } else {
-      await openIosApp(udid, bundleId, launchConsole: options?.launchConsole);
+      await openIosApp(
+        udid,
+        bundleId,
+        launchConsole: options?.launchConsole,
+        launchArgs: options?.launchArgs,
+      );
     }
     return null;
   }

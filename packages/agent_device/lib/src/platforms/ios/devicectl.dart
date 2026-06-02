@@ -207,6 +207,7 @@ Future<void> launchIosDeviceProcess(
   String udid,
   String bundleId, {
   String? payloadUrl,
+  List<String>? launchArgs,
 }) async {
   final args = [
     'device',
@@ -215,6 +216,8 @@ Future<void> launchIosDeviceProcess(
     '--device',
     udid,
     bundleId,
+    // App launch arguments are forwarded verbatim after the bundle id.
+    ...?launchArgs,
     ?payloadUrl,
   ];
   await runIosDevicectl(

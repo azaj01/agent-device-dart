@@ -395,6 +395,7 @@ Future<void> openAndroidApp(
   String deviceId,
   String app, {
   String? activity,
+  List<String>? launchArgs,
 }) async {
   await waitForAndroidBoot(deviceId);
 
@@ -418,6 +419,7 @@ Future<void> openAndroidApp(
         'android.intent.action.VIEW',
         '-d',
         deepLinkTarget,
+        ...?launchArgs,
       ]),
     );
     return;
@@ -435,7 +437,15 @@ Future<void> openAndroidApp(
     }
     await runCmd(
       'adb',
-      adbArgs(deviceId, ['shell', 'am', 'start', '-W', '-a', resolved.value]),
+      adbArgs(deviceId, [
+        'shell',
+        'am',
+        'start',
+        '-W',
+        '-a',
+        resolved.value,
+        ...?launchArgs,
+      ]),
     );
     return;
   }
@@ -461,6 +471,7 @@ Future<void> openAndroidApp(
           launchCategory,
           '-n',
           component,
+          ...?launchArgs,
         ]),
       );
     } catch (error) {
@@ -490,6 +501,7 @@ Future<void> openAndroidApp(
       launchCategory,
       '-p',
       resolved.value,
+      ...?launchArgs,
     ]),
     const ExecOptions(allowFailure: true),
   );
@@ -529,6 +541,7 @@ Future<void> openAndroidApp(
       launchCategory,
       '-n',
       component,
+      ...?launchArgs,
     ]),
   );
 }

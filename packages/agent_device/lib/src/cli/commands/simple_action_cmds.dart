@@ -17,6 +17,17 @@ import 'package:agent_device/src/utils/errors.dart';
 import '../base_command.dart';
 
 class OpenCommand extends AgentDeviceCommand {
+  OpenCommand() {
+    argParser.addMultiOption(
+      'launch-args',
+      help:
+          'Arguments forwarded verbatim to the app launch. iOS: appended after '
+          'the bundle id on simctl/devicectl launch. Android: appended to '
+          '`am start`, e.g. --launch-args=--es --launch-args=key '
+          '--launch-args=value for typed Intent extras.',
+    );
+  }
+
   @override
   String get name => 'open';
 
@@ -30,8 +41,14 @@ class OpenCommand extends AgentDeviceCommand {
       throw AppError(AppErrorCodes.invalidArgs, 'open requires a target app.');
     }
     final target = args.first;
+    final launchArgs = argResults?['launch-args'] as List<String>?;
     final device = await openAgentDevice();
-    await device.openApp(target);
+    await device.openApp(
+      target,
+      options: (launchArgs != null && launchArgs.isNotEmpty)
+          ? BackendOpenOptions(launchArgs: launchArgs)
+          : null,
+    );
     emitResult({
       'opened': target,
       'deviceSerial': device.device.id,
