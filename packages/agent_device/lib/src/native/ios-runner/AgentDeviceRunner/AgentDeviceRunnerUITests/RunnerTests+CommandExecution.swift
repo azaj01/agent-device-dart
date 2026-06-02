@@ -781,6 +781,92 @@ extension RunnerTests {
         return response
       }
       return gestureResponse(message: "pinched", timing: timing)
+    // Dart-port deviation: upstream dropped adjustSlider; restored here (the
+    // Dart port has a live fixture test for it).
+    case .adjustSlider:
+#if os(tvOS)
+      return Response(ok: false, error: ErrorPayload(
+        code: "UNSUPPORTED_OPERATION",
+        message: "adjustSlider is not supported on tvOS"
+      ))
+#else
+      guard let x = command.x, let y = command.y else {
+        return Response(ok: false, error: ErrorPayload(
+          message: "adjustSlider requires x/y coordinates"
+        ))
+      }
+      let coord = interactionCoordinate(app: activeApp, x: x, y: y)
+      let point = CGPoint(x: x, y: y)
+      if let position = command.normalizedPosition {
+        let clamped = min(max(position, 0), 1)
+        let posSliders = activeApp.sliders.allElementsBoundByIndex.filter {
+          $0.exists && $0.frame.contains(point)
+        }
+        if let slider = posSliders.first {
+          slider.adjust(toNormalizedSliderPosition: CGFloat(clamped))
+          return Response(ok: true, data: DataPayload(message: "adjusted to \(clamped) via slider"))
+        }
+        let info = findSliderInfoNear(snapshot: try? activeApp.snapshot(), x: x, y: y)
+        let rect: CGRect? = {
+          if let rx = command.rectX, let ry = command.rectY,
+             let rw = command.rectW, let rh = command.rectH {
+            return CGRect(x: rx, y: ry, width: rw, height: rh)
+          }
+          return info?.rect
+        }()
+        let currentNorm = info?.currentNormalized ?? 0.5
+        if let rect = rect {
+          let isVertical = rect.height > 80
+          let fromX: Double, fromY: Double, toX: Double, toY: Double
+          if isVertical {
+            fromX = Double(rect.midX)
+            fromY = Double(rect.origin.y) + Double(rect.height) * (1.0 - currentNorm)
+            toX = fromX
+            toY = Double(rect.origin.y) + Double(rect.height) * (1.0 - clamped)
+          } else {
+            fromX = Double(rect.origin.x) + Double(rect.width) * currentNorm
+            fromY = Double(rect.midY)
+            toX = Double(rect.origin.x) + Double(rect.width) * clamped
+            toY = fromY
+          }
+          let fromCoord = interactionCoordinate(app: activeApp, x: fromX, y: fromY)
+          let toCoord = interactionCoordinate(app: activeApp, x: toX, y: toY)
+          fromCoord.press(forDuration: 0.1, thenDragTo: toCoord, withVelocity: .slow, thenHoldForDuration: 0.1)
+          return Response(ok: true, data: DataPayload(message: "adjusted to \(clamped) via drag"))
+        }
+        return Response(ok: false, error: ErrorPayload(
+          message: "no slider found at (\(x), \(y))"
+        ))
+      }
+      let steps = command.steps ?? 1
+      let action = (command.action ?? "increment").lowercased()
+      let sliders = activeApp.sliders.allElementsBoundByIndex.filter {
+        $0.exists && $0.frame.contains(point)
+      }
+      if let slider = sliders.first {
+        let totalSteps = max(Double(slider.frame.width > slider.frame.height ? 12 : 24), 2)
+        let stepSize = 1.0 / totalSteps
+        for _ in 0..<abs(steps) {
+          let current = slider.normalizedSliderPosition
+          let next = action == "decrement"
+            ? max(0, current - CGFloat(stepSize))
+            : min(1, current + CGFloat(stepSize))
+          slider.adjust(toNormalizedSliderPosition: next)
+        }
+        return Response(ok: true, data: DataPayload(
+          message: "\(action) by \(abs(steps)) step(s) via slider"
+        ))
+      }
+      for _ in 0..<abs(steps) {
+        let offset = action == "decrement" ? -36.0 : 36.0
+        let tapCoord = coord.withOffset(CGVector(dx: offset, dy: 0))
+        tapCoord.tap()
+        usleep(200_000)
+      }
+      return Response(ok: true, data: DataPayload(
+        message: "\(action) by \(abs(steps)) step(s)"
+      ))
+#endif
     case .rotateGesture:
       guard let degrees = command.degrees, degrees.isFinite else {
         return Response(ok: false, error: ErrorPayload(message: "rotateGesture requires degrees"))
@@ -910,5 +996,54 @@ extension RunnerTests {
         referenceHeight: frame.isEmpty ? nil : Double(frame.height)
       )
     )
+  }
+}
+
+// Dart-port deviation: slider-resolution helpers backing the restored
+// `adjustSlider` command (upstream removed slider support).
+extension RunnerTests {
+  fileprivate struct SliderInfo {
+    let rect: CGRect
+    let currentNormalized: Double?
+  }
+
+  fileprivate func findSliderInfoNear(
+    snapshot: XCUIElementSnapshot?, x: Double, y: Double
+  ) -> SliderInfo? {
+    guard let snapshot = snapshot else { return nil }
+    let point = CGPoint(x: x, y: y)
+    var bestNode: XCUIElementSnapshot?
+    var bestArea = Double.infinity
+
+    func visit(_ node: XCUIElementSnapshot) {
+      let frame = node.frame
+      if !frame.isNull && !frame.isEmpty && frame.contains(point) {
+        let area = Double(frame.width * frame.height)
+        if area < bestArea {
+          bestArea = area
+          bestNode = node
+        }
+      }
+      for child in node.children {
+        if let child = child as? XCUIElementSnapshot {
+          visit(child)
+        }
+      }
+    }
+
+    visit(snapshot)
+    guard let node = bestNode else { return nil }
+    let currentNorm = parseNormalizedValue(node.value as? String ?? node.label)
+    return SliderInfo(rect: node.frame, currentNormalized: currentNorm)
+  }
+
+  fileprivate func parseNormalizedValue(_ text: String) -> Double? {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.hasSuffix("%") {
+      let numStr = trimmed.dropLast()
+      if let num = Double(numStr) { return num / 100.0 }
+    }
+    if let num = Double(trimmed), num >= 0, num <= 1 { return num }
+    return nil
   }
 }

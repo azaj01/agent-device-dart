@@ -33,6 +33,9 @@ enum CommandType: String, Codable {
   case status
   case uptime
   case shutdown
+  // Dart-port deviation: upstream dropped its dedicated slider command; the
+  // Dart port keeps `adjustSlider` (it has a live fixture test for it).
+  case adjustSlider
 }
 
 /// Runner command traits — see CONTEXT.md ("Runner command traits").
@@ -73,7 +76,8 @@ extension CommandType {
     // table now prevents) and are classified as interactions here.
     case .tap, .tapSeries, .longPress, .drag, .dragSeries, .remotePress, .type, .swipe,
          .back, .backInApp, .backSystem, .rotate, .appSwitcher,
-         .keyboardDismiss, .keyboardReturn, .pinch, .rotateGesture, .transformGesture:
+         .keyboardDismiss, .keyboardReturn, .pinch, .rotateGesture, .transformGesture,
+         .adjustSlider:
       return CommandTraits(isInteraction: true, readOnly: .never, isLifecycle: false)
 
     // Read-only reads: eligible for the session-invalidating retry.
@@ -119,6 +123,13 @@ struct Command: Codable {
   let textEntryMode: String?
   let clearFirst: Bool?
   let action: String?
+  // Dart-port deviation: adjustSlider command fields (see CommandType).
+  let normalizedPosition: Double?
+  let steps: Int?
+  let rectX: Double?
+  let rectY: Double?
+  let rectW: Double?
+  let rectH: Double?
   let x: Double?
   let y: Double?
   let button: String?

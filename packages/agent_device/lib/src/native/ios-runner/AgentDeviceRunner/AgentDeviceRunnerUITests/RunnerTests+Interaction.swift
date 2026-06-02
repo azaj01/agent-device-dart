@@ -1004,7 +1004,9 @@ extension RunnerTests {
   }
 
 #if !os(tvOS)
-  private func interactionCoordinate(app: XCUIApplication, x: Double, y: Double) -> XCUICoordinate {
+  // Dart-port deviation: internal (was private) so the restored adjustSlider
+  // handler in RunnerTests+CommandExecution.swift can build slider drag coords.
+  func interactionCoordinate(app: XCUIApplication, x: Double, y: Double) -> XCUICoordinate {
 #if os(iOS)
     let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
     return origin.withOffset(CGVector(dx: x, dy: y))
