@@ -17,6 +17,7 @@ import 'package:agent_device/src/snapshot/ios_presentation.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
+import 'package:agent_device/src/utils/file_mutex.dart';
 import 'package:agent_device/src/utils/location_coordinates.dart';
 import 'package:path/path.dart' as p;
 
@@ -86,24 +87,48 @@ class IosBackend extends Backend {
   /// time.
   Future<IosRunnerSession> _runner(BackendCommandContext ctx) async {
     final udid = _udid(ctx);
+    final existing = await _liveRunner(udid);
+    if (existing != null) return existing;
+
+    // No live runner — (re)launch, serialized per device on the same lock
+    // commands use, so concurrent `ad` invocations don't each spawn their own
+    // `xcodebuild`. Whoever wins the lock launches and records the runner;
+    // everyone else re-checks inside the lock and reuses it.
+    return FileMutex(IosRunnerClient.runnerLockFile(udid)).protect(
+      () async {
+        final winner = await _liveRunner(udid);
+        if (winner != null) return winner;
+        await _deleteRunnerRecord(udid);
+        final kindStr = await _resolveKind(udid);
+        final runnerKind = kindStr == 'device'
+            ? IosRunnerKind.device
+            : IosRunnerKind.simulator;
+        final session = await IosRunnerClient.launch(
+          udid: udid,
+          kind: runnerKind,
+        );
+        _IosRunnerCache.instance.set(udid, session);
+        await _writeRunnerRecord(session);
+        return session;
+      },
+      // Generous: a cold simulator launch budget is 120s, and a waiter may
+      // queue behind one.
+      maxWait: const Duration(seconds: 200),
+    );
+  }
+
+  /// Return a live runner for [udid] from the in-process cache or the on-disk
+  /// record (each verified with [IosRunnerClient.isAlive]), or null if none is
+  /// currently reachable.
+  Future<IosRunnerSession?> _liveRunner(String udid) async {
     final inProc = _IosRunnerCache.instance.get(udid);
     if (inProc != null && await IosRunnerClient.isAlive(inProc)) return inProc;
-
     final diskRecord = await _readRunnerRecord(udid);
     if (diskRecord != null && await IosRunnerClient.isAlive(diskRecord)) {
       _IosRunnerCache.instance.set(udid, diskRecord);
       return diskRecord;
     }
-    // Stale or missing — clear the record and launch fresh.
-    await _deleteRunnerRecord(udid);
-    final kindStr = await _resolveKind(udid);
-    final runnerKind = kindStr == 'device'
-        ? IosRunnerKind.device
-        : IosRunnerKind.simulator;
-    final session = await IosRunnerClient.launch(udid: udid, kind: runnerKind);
-    _IosRunnerCache.instance.set(udid, session);
-    await _writeRunnerRecord(session);
-    return session;
+    return null;
   }
 
   /// Shut down the cached runner for [udid] (if any). Called by the

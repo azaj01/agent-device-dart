@@ -34,7 +34,11 @@ class DeviceSelector {
 
   const DeviceSelector({this.platform, this.serial, this.name});
 
-  bool _matches(BackendDeviceInfo device) {
+  /// True if [device] satisfies this selector's `serial`/`name` constraints.
+  /// Platform filtering is applied earlier by [Backend.listDevices]; this only
+  /// matches the identity fields. Public so the CLI can match across the
+  /// candidate devices of multiple backends during platform auto-detection.
+  bool matches(BackendDeviceInfo device) {
     if (serial != null && device.id != serial) return false;
     if (name != null && device.name != name) return false;
     return true;
@@ -112,7 +116,7 @@ class AgentDevice {
                 platform: _toBackendPlatform(selector.platform!),
               ),
       );
-      final filtered = devices.where(selector._matches).toList();
+      final filtered = devices.where(selector.matches).toList();
       if (filtered.isEmpty) {
         throw AppError(
           AppErrorCodes.deviceNotFound,
@@ -122,20 +126,33 @@ class AgentDevice {
               'platform': platformSelectorToString(selector.platform!),
             if (selector.serial != null) 'serial': selector.serial,
             if (selector.name != null) 'name': selector.name,
-            'available': devices.map((d) => d.id).toList(),
+            // Label each id with its platform so an iOS udid passed without
+            // `--platform` (which would only enumerate one backend) doesn't
+            // look like the device "vanished".
+            'available': devices
+                .map((d) => '${d.id} (${d.platform.name})')
+                .toList(),
+            if (selector.platform == null)
+              'hint':
+                  'Only this backend was enumerated. If the target is on '
+                  'another platform, pass --platform (e.g. --platform ios).',
           },
         );
       }
       picked = filtered.first;
     }
-    // Preserve any existing session fields (appId, metadata, etc.) — we
-    // only want to refresh the deviceSerial. Matters for cross-invocation
-    // session sharing: without this merge, every CLI invocation would
-    // reset the record to `{name, deviceSerial}` and lose the previously
-    // opened app id.
+    // Preserve any existing session fields (appId, metadata, etc.) — we only
+    // want to refresh the resolved device. Matters for cross-invocation
+    // session sharing: without this merge, every CLI invocation would reset
+    // the record to `{name, deviceSerial}` and lose the previously opened app
+    // id. Remembering the platform lets the next flagless command skip
+    // backend auto-detection.
     final existing = await store.get(sessionName);
     final merged = (existing ?? CommandSessionRecord(name: sessionName))
-        .copyWith(deviceSerial: picked.id);
+        .copyWith(
+          deviceSerial: picked.id,
+          devicePlatform: picked.platform.name,
+        );
     await store.set(merged);
     return AgentDevice._(
       backend: backend,

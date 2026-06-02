@@ -89,27 +89,39 @@ abstract class AgentDeviceCommand extends Command<int> {
   /// operations go through `simctl`, physical devices through
   /// `devicectl`). macOS / Linux are Phase 9.
   Backend resolveBackend() {
-    final platform =
-        _stringOption('platform') ?? argResults?['platform'] as String?;
-    switch (platform) {
-      case 'android':
-        return const AndroidBackend();
-      case 'ios':
-      case 'apple': // Phase 8A: treat `apple` as iOS.
-        return const IosBackend();
-      case null:
-        // Auto-detect: Android first because it's the fuller backend.
-        return const AndroidBackend();
-    }
-    throw AppError(
-      AppErrorCodes.unsupportedPlatform,
-      'Platform "$platform" is not yet implemented in the Dart port.',
-      details: {
-        'hint':
-            '--platform android and --platform ios are supported. '
-            'macOS / Linux are tracked in Phase 9.',
-      },
+    final platform = parsePlatformSelector(
+      _stringOption('platform') ?? argResults?['platform'] as String?,
     );
+    // No --platform flag: Android first because it's the fuller backend.
+    if (platform == null) return const AndroidBackend();
+    return backendForPlatform(platform);
+  }
+
+  /// Map a [PlatformSelector] to its concrete [Backend]. Use this rather than
+  /// [resolveBackend] when the platform is known from a selector (e.g.
+  /// remembered in the session) instead of the `--platform` CLI flag —
+  /// [resolveBackend] only inspects the flag and would otherwise fall back to
+  /// Android.
+  Backend backendForPlatform(PlatformSelector platform) {
+    switch (platform) {
+      case PlatformSelector.android:
+        return const AndroidBackend();
+      case PlatformSelector.ios:
+      case PlatformSelector.apple: // Phase 8A: treat `apple` as iOS.
+        return const IosBackend();
+      case PlatformSelector.macos:
+      case PlatformSelector.linux:
+        throw AppError(
+          AppErrorCodes.unsupportedPlatform,
+          'Platform "${platformSelectorToString(platform)}" is not yet '
+          'implemented in the Dart port.',
+          details: const {
+            'hint':
+                '--platform android and --platform ios are supported. '
+                'macOS / Linux are tracked in Phase 9.',
+          },
+        );
+    }
   }
 
   /// The [CommandSessionStore] this CLI invocation should use. Defaults to
@@ -147,29 +159,126 @@ abstract class AgentDeviceCommand extends Command<int> {
   Future<AgentDevice> openAgentDevice({CommandSessionStore? sessions}) async {
     if (verbose) initLogger(verbose: true);
     final store = sessions ?? resolveSessionStore();
-    // Prefer a device serial already stored for this session if the user
-    // hasn't narrowed down via --serial / --device. This is what lets
-    // `agent-device open` in shell A and `agent-device snapshot` in shell
-    // B land on the same device.
-    final base = selectorFromFlags;
-    DeviceSelector selector = base;
-    if (base.serial == null && base.name == null) {
+    // Prefer the device remembered for this session if the user hasn't
+    // narrowed down via --serial / --device. This is what lets
+    // `agent-device open` in shell A and `agent-device snapshot` in shell B
+    // land on the same device. Restoring the remembered platform too lets the
+    // resolve take AgentDevice.open's serial+platform fast path (no
+    // enumeration) on repeat commands.
+    DeviceSelector selector = selectorFromFlags;
+    if (selector.serial == null && selector.name == null) {
       final existing = await store.get(sessionName);
       final remembered = existing?.deviceSerial;
       if (remembered != null && remembered.isNotEmpty) {
         selector = DeviceSelector(
-          platform: base.platform,
+          platform:
+              selector.platform ??
+              parsePlatformSelector(existing?.devicePlatform),
           serial: remembered,
           name: null,
         );
       }
     }
+
+    // With a platform — whether from --platform or restored from the session —
+    // address that backend directly. Drive the choice off selector.platform,
+    // NOT resolveBackend(), which only sees the CLI flag and would default to
+    // Android for a session-remembered platform.
+    if (selector.platform != null) {
+      return AgentDevice.open(
+        backend: backendForPlatform(selector.platform!),
+        selector: selector,
+        sessionName: sessionName,
+        sessions: store,
+      );
+    }
+
+    // No platform: auto-detect across backends so an iOS udid/name resolves
+    // without --platform, and so a "not found" error lists devices from every
+    // platform instead of just Android.
+    final resolved = await _resolveBackendAndSelector(selector);
     return AgentDevice.open(
-      backend: resolveBackend(),
-      selector: selector,
+      backend: resolved.backend,
+      selector: resolved.selector,
       sessionName: sessionName,
       sessions: store,
     );
+  }
+
+  /// Enumerate every backend, find the device matching [selector] (or, when
+  /// nothing is pinned, the first booted device), and return that device's
+  /// backend paired with a serial+platform selector that takes
+  /// `AgentDevice.open`'s fast path.
+  Future<({Backend backend, DeviceSelector selector})>
+  _resolveBackendAndSelector(DeviceSelector selector) async {
+    const backends = <Backend>[AndroidBackend(), IosBackend()];
+    final pairs = <({Backend backend, BackendDeviceInfo device})>[];
+    await Future.wait([
+      for (final backend in backends)
+        Future(() async {
+          try {
+            for (final device in await AgentDevice.listDevices(backend)) {
+              pairs.add((backend: backend, device: device));
+            }
+          } catch (_) {
+            // A missing toolchain on one platform shouldn't fail the resolve.
+          }
+        }),
+    ]);
+
+    final candidates = (selector.serial != null || selector.name != null)
+        ? pairs.where((p) => selector.matches(p.device)).toList()
+        : pairs;
+    final chosen = _preferBooted(candidates.toList());
+
+    if (chosen == null) {
+      throw AppError(
+        AppErrorCodes.deviceNotFound,
+        'No device matches the selector',
+        details: {
+          if (selector.serial != null) 'serial': selector.serial,
+          if (selector.name != null) 'name': selector.name,
+          'available': pairs
+              .map((p) => '${p.device.id} (${p.device.platform.name})')
+              .toList(),
+          'hint': pairs.isEmpty
+              ? 'No booted devices found on any platform.'
+              : 'Pass --serial / --device matching one of the available '
+                    'devices, or --platform to disambiguate.',
+        },
+      );
+    }
+
+    return (
+      backend: chosen.backend,
+      selector: DeviceSelector(
+        platform: _platformSelectorFor(chosen.device.platform),
+        serial: chosen.device.id,
+      ),
+    );
+  }
+
+  static ({Backend backend, BackendDeviceInfo device})? _preferBooted(
+    List<({Backend backend, BackendDeviceInfo device})> candidates,
+  ) {
+    if (candidates.isEmpty) return null;
+    return candidates.firstWhere(
+      (c) => c.device.booted == true,
+      orElse: () => candidates.first,
+    );
+  }
+
+  static PlatformSelector _platformSelectorFor(AgentDeviceBackendPlatform p) {
+    switch (p) {
+      case AgentDeviceBackendPlatform.ios:
+        return PlatformSelector.ios;
+      case AgentDeviceBackendPlatform.android:
+        return PlatformSelector.android;
+      case AgentDeviceBackendPlatform.macos:
+        return PlatformSelector.macos;
+      case AgentDeviceBackendPlatform.linux:
+        return PlatformSelector.linux;
+    }
   }
 
   /// Positional arguments remaining after flag parsing.

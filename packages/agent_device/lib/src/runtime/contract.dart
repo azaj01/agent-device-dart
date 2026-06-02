@@ -60,6 +60,12 @@ class CommandSessionRecord {
   final String? backendSessionId;
   final SnapshotState? snapshot;
   final String? deviceSerial;
+
+  /// Platform of the resolved device (e.g. `ios`, `android`), remembered
+  /// alongside [deviceSerial]. Lets a later flagless command restore the
+  /// device's platform and skip re-enumerating every backend to auto-detect
+  /// it. Dart-port-only addition.
+  final String? devicePlatform;
   final Map<String, Object?>? metadata;
 
   const CommandSessionRecord({
@@ -70,6 +76,7 @@ class CommandSessionRecord {
     this.backendSessionId,
     this.snapshot,
     this.deviceSerial,
+    this.devicePlatform,
     this.metadata,
   });
 
@@ -86,6 +93,7 @@ class CommandSessionRecord {
     String? backendSessionId,
     SnapshotState? snapshot,
     String? deviceSerial,
+    String? devicePlatform,
     Map<String, Object?>? metadata,
     Set<String> clearFields = const {},
   }) {
@@ -107,6 +115,9 @@ class CommandSessionRecord {
       deviceSerial: clearFields.contains('deviceSerial')
           ? null
           : (deviceSerial ?? this.deviceSerial),
+      devicePlatform: clearFields.contains('devicePlatform')
+          ? null
+          : (devicePlatform ?? this.devicePlatform),
       metadata: clearFields.contains('metadata')
           ? null
           : (metadata ?? this.metadata),
@@ -120,6 +131,7 @@ class CommandSessionRecord {
     if (appName != null) 'appName': appName,
     if (backendSessionId != null) 'backendSessionId': backendSessionId,
     if (deviceSerial != null) 'deviceSerial': deviceSerial,
+    if (devicePlatform != null) 'devicePlatform': devicePlatform,
     if (metadata != null) 'metadata': metadata,
     // Note: [snapshot] is NOT persisted — it contains live [SnapshotState]
     // with file-path references that are only meaningful within one CLI
@@ -152,6 +164,7 @@ class CommandSessionRecord {
       appName: json['appName'] as String?,
       backendSessionId: json['backendSessionId'] as String?,
       deviceSerial: json['deviceSerial'] as String?,
+      devicePlatform: json['devicePlatform'] as String?,
       metadata: readMetadata(json['metadata']),
     );
   }

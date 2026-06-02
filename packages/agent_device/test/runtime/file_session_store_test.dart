@@ -46,6 +46,19 @@ void main() {
       expect(r.metadata, {'foo': 'bar', 'n': 42});
     });
 
+    test('devicePlatform round-trips so flagless commands skip detection', () async {
+      await store.set(
+        const CommandSessionRecord(
+          name: 'default',
+          deviceSerial: 'udid-ios',
+          devicePlatform: 'ios',
+        ),
+      );
+      final r = await store.get('default');
+      expect(r!.deviceSerial, 'udid-ios');
+      expect(r.devicePlatform, 'ios');
+    });
+
     test('set writes the file under sessionsDir with safe name', () async {
       await store.set(const CommandSessionRecord(name: 'my/nasty:name!'));
       final file = File(p.join(store.sessionsDir, 'my_nasty_name_.json'));

@@ -17,9 +17,11 @@ check: analyze test
 # Build a standalone native binary at dist/agent-device. Side-by-side
 # `ad` is a symlink so users can pick whichever spelling they prefer.
 # Run `make compile` after every release; the binary embeds the SDK so
-# it has no Dart-runtime dependency on the host.
+# it has no Dart-runtime dependency on the host. Regenerate version.dart
+# from pubspec first so the embedded `ad --version` can never go stale.
 compile:
 	@mkdir -p dist
+	cd packages/agent_device && dart run build_runner build
 	dart compile exe packages/agent_device/bin/agent_device.dart -o dist/agent-device
 	ln -sf agent-device dist/ad
 	@echo "built: $$(pwd)/dist/agent-device  ($$(du -h dist/agent-device | cut -f1))"

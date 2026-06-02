@@ -1,3 +1,19 @@
+## 0.0.9
+
+**Reliability / Bug Fixes**
+
+- Concurrent commands sharing a session no longer fail with `FileSystemException: lock failed … errno 35`. The session-store advisory lock used the non-blocking `FileLock.exclusive`, so two overlapping `ad` invocations collided instead of waiting. Introduced a `FileMutex` (intra- and cross-process) that queues with bounded retry; concurrent commands now serialize cleanly.
+- iOS commands without `--platform` no longer fail with a misleading `DEVICE_NOT_FOUND` that listed only Android devices. The CLI now auto-detects the backend across platforms, so `--serial <udid>` and `--device "<name>"` resolve regardless of platform. The resolved platform is remembered in the session so repeat commands skip re-enumeration and keep the fast path.
+- `DEVICE_NOT_FOUND` now lists devices from every platform with platform labels and a clearer hint, instead of only the default backend's devices.
+- iOS runner no longer "churns": `isAlive` tolerates a busy single-threaded runner (longer probe timeout + retries) instead of false-negatively declaring it dead and relaunching. Runner (re)launch is serialized per device with a cross-process lock and a double-check, so concurrent invocations don't each spawn their own `xcodebuild`.
+- iOS runner commands serialize per device on that same lock, so overlapping commands queue rather than colliding on the single-command-at-a-time runner.
+
+**Internal**
+
+- New `FileMutex` lock primitive (`utils/file_mutex.dart`), used by the session store and the iOS runner launch/command paths.
+- `CommandSessionRecord` gained a `devicePlatform` field (remembered alongside `deviceSerial`).
+- `version.dart` is regenerated from `pubspec.yaml` as part of `make compile`, so the embedded `ad --version` can no longer drift from the published version.
+
 ## 0.0.8
 
 **New Capabilities (ported from agent-device)**

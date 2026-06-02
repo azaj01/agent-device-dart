@@ -14,6 +14,7 @@ import 'dart:math';
 
 import 'package:path/path.dart' as p;
 
+import '../utils/file_mutex.dart';
 import 'contract.dart';
 
 /// Stores [CommandSessionRecord]s as one JSON file per session under
@@ -141,22 +142,18 @@ class FileSessionStore implements CommandSessionStore {
       File(p.join(sessionsDir, '${_safeName(name)}.lock'));
 
   /// Acquire an advisory exclusive lock on the per-session `.lock` file and
-  /// run [body]. Cross-process-safe on all platforms Dart supports.
+  /// run [body]. Serialized within and across processes by [FileMutex].
+  ///
+  /// Session mutations are tiny (write a tmp file, atomic rename), so the lock
+  /// is held only briefly; a 5s wait is far more than concurrent CLI
+  /// invocations need. Previously this used the *non-blocking*
+  /// `FileLock.exclusive` directly, which made two concurrent `ad` commands
+  /// sharing a session fail with `errno 35 (EAGAIN)` instead of queuing.
   Future<T> _withLock<T>(String name, Future<T> Function() body) async {
     await _ensureDir();
-    final lock = _lockFileFor(name);
-    if (!await lock.exists()) await lock.create();
-    final handle = await lock.open(mode: FileMode.write);
-    try {
-      await handle.lock(FileLock.exclusive);
-      try {
-        return await body();
-      } finally {
-        await handle.unlock();
-      }
-    } finally {
-      await handle.close();
-    }
+    return FileMutex(
+      _lockFileFor(name),
+    ).protect(body, maxWait: const Duration(seconds: 5));
   }
 
   /// Session names come from user input (`--session`) and the final

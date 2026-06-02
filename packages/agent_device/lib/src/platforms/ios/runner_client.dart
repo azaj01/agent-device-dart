@@ -32,8 +32,10 @@ import 'dart:io';
 
 import 'package:agent_device/src/native/resolve.dart';
 import 'package:agent_device/src/platforms/ios/runner_build_cache.dart';
+import 'package:agent_device/src/runtime/paths.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
+import 'package:agent_device/src/utils/file_mutex.dart';
 import 'package:agent_device/src/utils/logger.dart';
 import 'package:path/path.dart' as p;
 
@@ -743,7 +745,35 @@ class IosRunnerClient {
   /// caller should explicitly reset the session; silently retrying
   /// against stale addresses with 30-second timeouts just hangs the
   /// user's terminal.
+  ///
+  /// Commands serialize per device (across processes) on the same advisory
+  /// lock the runner launch uses — the runner serves one command at a time,
+  /// so overlapping sends from concurrent `ad` invocations would otherwise
+  /// collide. Pass `lock: false` to bypass the queue (used by [stop] so a
+  /// shutdown isn't blocked behind a wedged command).
   static Future<RunnerResponse> send(
+    IosRunnerSession session,
+    Map<String, Object?> body, {
+    Duration timeout = const Duration(seconds: 30),
+    bool lock = true,
+  }) {
+    if (!lock) return _send(session, body, timeout: timeout);
+    return FileMutex(runnerLockFile(session.udid)).protect(
+      () => _send(session, body, timeout: timeout),
+      maxWait: const Duration(seconds: 240),
+    );
+  }
+
+  /// Per-UDID advisory lock guarding runner launch + command execution. All
+  /// launches and sends for a simulator/device serialize on this file, so a
+  /// command never races a relaunch and concurrent commands queue instead of
+  /// failing.
+  static File runnerLockFile(String udid) {
+    final paths = resolveStatePaths();
+    return File(p.join(paths.baseDir, 'ios-runners', '$udid.runner.lock'));
+  }
+
+  static Future<RunnerResponse> _send(
     IosRunnerSession session,
     Map<String, Object?> body, {
     Duration timeout = const Duration(seconds: 30),
@@ -872,9 +902,14 @@ class IosRunnerClient {
   /// up.
   static Future<void> stop(IosRunnerSession session) async {
     try {
-      await send(session, const {
-        'command': 'shutdown',
-      }, timeout: const Duration(seconds: 3));
+      await send(
+        session,
+        const {'command': 'shutdown'},
+        timeout: const Duration(seconds: 3),
+        // Don't queue behind a possibly-wedged command — we SIGKILL below if
+        // the graceful shutdown doesn't take.
+        lock: false,
+      );
     } catch (_) {
       // Expected if the runner is already wedged.
     }
@@ -907,21 +942,39 @@ class IosRunnerClient {
   /// caching to decide whether to reuse a prior runner. Simulator
   /// probes loopback; device probes the CoreDevice tunnel endpoint.
   static Future<bool> isAlive(IosRunnerSession session) async {
-    if (session.kind == IosRunnerKind.device && session.tunnelIp != null) {
-      return _probeRunnerEndpoint(
-        _commandUrl(session.tunnelIp!, session.port),
-        timeout: const Duration(seconds: 1),
-      );
+    // The runner is single-threaded: while it is busy serving a command its
+    // accept loop can lag, so one tight probe yields false negatives that
+    // would trigger a needless relaunch (observed as runner "churn"). Probe
+    // with a generous timeout and a couple of retries before declaring the
+    // runner dead.
+    Future<bool> probe() {
+      if (session.kind == IosRunnerKind.device && session.tunnelIp != null) {
+        return _probeRunnerEndpoint(
+          _commandUrl(session.tunnelIp!, session.port),
+          timeout: const Duration(seconds: 2),
+        );
+      }
+      return _probePort(session.port, timeout: const Duration(seconds: 1));
     }
-    return _probePort(session.port);
+
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (await probe()) return true;
+      if (attempt < 2) {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      }
+    }
+    return false;
   }
 
-  static Future<bool> _probePort(int port) async {
+  static Future<bool> _probePort(
+    int port, {
+    Duration timeout = const Duration(milliseconds: 300),
+  }) async {
     try {
       final s = await Socket.connect(
         InternetAddress.loopbackIPv4,
         port,
-        timeout: const Duration(milliseconds: 300),
+        timeout: timeout,
       );
       await s.close();
       return true;
