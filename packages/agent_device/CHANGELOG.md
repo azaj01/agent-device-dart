@@ -1,3 +1,10 @@
+## 0.0.10
+
+**Bug Fixes**
+
+- Android snapshot now uses the bundled prebuilt helper APK directly. Its manifest carried a placeholder `"sha256": "local-build"` that failed validation, so the helper was silently discarded — falling back to an on-device auto-build (which fails in many environments) and then to a flaky `uiautomator dump`. Snapshots are now faster and far more reliable on Android, with no build toolchain required.
+- `find type=<T>` now matches a node's type (e.g. `type=Button`). Previously `type` was not a recognized selector key, so the expression fell through to a literal-substring search and silently returned no matches; it now aliases `role`.
+
 ## 0.0.9
 
 **Reliability / Bug Fixes**

@@ -33,6 +33,7 @@ class SelectorChain {
 const _textKeys = {
   'id',
   'role',
+  'type', // Dart-port alias for `role` (matches the node's normalized type).
   'text',
   'label',
   'value',

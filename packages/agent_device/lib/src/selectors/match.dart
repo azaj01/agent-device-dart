@@ -24,6 +24,11 @@ bool _matchesTerm(SnapshotNode node, SelectorTerm term, String platform) {
     case 'id':
       return _textEquals(node.identifier, value.toString());
     case 'role':
+    // Dart-port addition: `type` is an alias for `role`. Users reach for it
+    // because the snapshot/`get` expose the node's `type`, so `find type=Button`
+    // should match the same way `role=Button` does instead of silently falling
+    // back to a literal-substring search that never matches.
+    case 'type':
       return _textEquals(_normalizeType(node.type ?? ''), value.toString());
     case 'label':
       return _textEquals(node.label, value.toString());

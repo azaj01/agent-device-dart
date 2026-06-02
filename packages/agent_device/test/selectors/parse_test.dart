@@ -79,6 +79,9 @@ void main() {
     test('recognizes key=value as token', () {
       expect(isSelectorToken('role=button'), true);
       expect(isSelectorToken('label="text"'), true);
+      // `type` is a recognized alias for `role`; without it, `type=Button`
+      // would be treated as a literal substring and never match.
+      expect(isSelectorToken('type=Button'), true);
     });
 
     test('recognizes boolean shorthands', () {

@@ -29,6 +29,24 @@ void main() {
       expect(matchesSelector(testNode, selector, 'ios'), true);
     });
 
+    test('matches by type (alias of role, normalized)', () {
+      // `find type=Button` previously fell through to a literal-substring
+      // search and never matched; `type` now aliases `role`.
+      final selector = const Selector(
+        raw: 'type=uibutton',
+        terms: [SelectorTerm(key: 'type', value: 'uibutton')],
+      );
+      expect(matchesSelector(testNode, selector, 'ios'), true);
+    });
+
+    test('does not match a wrong type', () {
+      final selector = const Selector(
+        raw: 'type=uitextfield',
+        terms: [SelectorTerm(key: 'type', value: 'uitextfield')],
+      );
+      expect(matchesSelector(testNode, selector, 'ios'), false);
+    });
+
     test('matches by label (case-insensitive)', () {
       final selector = const Selector(
         raw: 'label="SUBMIT"',
