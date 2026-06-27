@@ -112,12 +112,33 @@ extension RunnerTests {
         completion((jsonResponse(status: 200, response: executeStatus(command: command)), false))
         return
       }
+      if command.command == .uptime {
+        completion((jsonResponse(status: 200, response: executeUptime()), false))
+        return
+      }
+      NSLog(
+        "AGENT_DEVICE_RUNNER_COMMAND_ACCEPTED command=%@ commandId=%@",
+        command.command.rawValue,
+        command.commandId ?? ""
+      )
       commandJournal.accept(command: command)
       commandExecutionQueue.async {
         do {
           let response = try self.executeAccepted(command: command)
+          NSLog(
+            "AGENT_DEVICE_RUNNER_COMMAND_COMPLETED command=%@ commandId=%@ ok=%d",
+            command.command.rawValue,
+            command.commandId ?? "",
+            response.ok ? 1 : 0
+          )
           completion((self.jsonResponse(status: 200, response: response), command.command == .shutdown))
         } catch {
+          NSLog(
+            "AGENT_DEVICE_RUNNER_COMMAND_FAILED command=%@ commandId=%@ error=%@",
+            command.command.rawValue,
+            command.commandId ?? "",
+            String(describing: error)
+          )
           completion((
             self.jsonResponse(
               status: 500,
@@ -149,8 +170,17 @@ extension RunnerTests {
   // MARK: - Response Encoding
 
   private func jsonResponse(status: Int, response: Response) -> Data {
+    // Stamp the gesture-clock uptime at the END of command handling, just before the HTTP
+    // write, so the warm snapshot and recordStart responses carry the anchor for free. This
+    // runs AFTER commandJournal.finish, so journal-stored lifecycleResponseJson stays
+    // unstamped — recovered/status-replayed results carry no anchor and the daemon falls back
+    // rather than pairing a stale uptime with a much-later receipt time.
+    let stamped =
+      response.ok
+      ? response.stampingCurrentUptimeMs(ProcessInfo.processInfo.systemUptime * 1000)
+      : response
     let encoder = JSONEncoder()
-    let body = (try? encoder.encode(response)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+    let body = (try? encoder.encode(stamped)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
     return httpResponse(status: status, body: body)
   }
 

@@ -2,22 +2,16 @@ import XCTest
 
 extension RunnerTests {
   private static let axSnapshotErrorCode = "IOS_AX_SNAPSHOT_FAILED"
+  private static let axSnapshotFailureMessage =
+    "iOS XCTest snapshot failed while serializing the accessibility tree."
+  private static let axSnapshotUnavailableReason = "ax_snapshot_unavailable"
   private static let axSnapshotHint =
-    "XCTest could not serialize this iOS accessibility tree. Try a smaller read such as snapshot -s <visible label or id> -d 8, use direct selector commands such as find id <value> click, or use screenshot/logs/appstate in the same session. If you own the app and need full-tree inspection, consider flagging this screen for accessibility-tree simplification: reduce unnecessary accessible wrapper nesting and expose stable ids on actionable controls."
-  private static let collapsedTabCandidateTypes: Set<XCUIElement.ElementType> = [
-    .button,
-    .link,
-    .menuItem,
-    .other,
-    .staticText
-  ]
-  private static let scrollContainerTypes: Set<XCUIElement.ElementType> = [
-    .collectionView,
-    .scrollView,
-    .table
-  ]
-
-  private struct SnapshotTraversalContext {
+    "Snapshot state is unavailable because XCTest could not serialize this iOS accessibility tree. This can be specific to the current screen. Use plain screenshot, not screenshot --overlay-refs, as visual truth; navigate with coordinate commands if needed; then retry snapshot -i after reaching another screen. If you own the app and need full-tree inspection, simplify this screen's accessibility tree and expose stable ids on actionable controls."
+  private static let rawSnapshotTooLargeCode = "IOS_RAW_SNAPSHOT_TOO_LARGE"
+  private static let rawSnapshotMaxNodes = 5_000
+  private static let rawSnapshotTooLargeHint =
+    "Raw iOS snapshot exceeded the runner payload guard. Use regular snapshot for visible UI, or scope/depth-limit raw snapshot when inspecting a large accessibility tree."
+  struct SnapshotTraversalContext {
     let queryRoot: XCUIElement
     let rootSnapshot: XCUIElementSnapshot
     let viewport: CGRect
@@ -84,29 +78,59 @@ extension RunnerTests {
     }
   }
 
+  static let structuralOnlyNodeTypes: Set<String> = [
+    "Application",
+    "Window",
+    "Other",
+    "ScrollView"
+  ]
+
+  private static let collapsedTabCandidateTypes: Set<XCUIElement.ElementType> = [
+    .button,
+    .link,
+    .menuItem,
+    .other,
+    .staticText
+  ]
+
+  static let scrollContainerTypes: Set<XCUIElement.ElementType> = [
+    .collectionView,
+    .scrollView,
+    .table
+  ]
+
+  private static let flatInteractiveFallbackBudget: TimeInterval = 1.0
+
   func snapshotFast(app: XCUIApplication, options: SnapshotOptions) throws -> DataPayload {
     if let blocking = blockingSystemAlertSnapshot() {
       return blocking
     }
+    return try runSnapshotCapturePlan(
+      Self.regularVisiblePlan,
+      app: app,
+      options: options,
+      terminal: .sparseWithFatalOnAXFailure
+    )
+  }
 
-    guard let context = try makeSnapshotTraversalContext(app: app, options: options) else {
-      return DataPayload(nodes: [], truncated: false)
-    }
-
+  func recursiveTreeSnapshotPayload(
+    context: SnapshotTraversalContext,
+    options: SnapshotOptions
+  ) -> DataPayload {
     var cachedDescendantElements: [XCUIElement]?
     func collapsedTabDescendants() -> [XCUIElement] {
       if let cachedDescendantElements {
         return cachedDescendantElements
       }
-      let fetched = safeSnapshotElementsQuery {
+      let result = snapshotElementsQuery {
         context.queryRoot.descendants(matching: .any).allElementsBoundByIndex
       }
-      cachedDescendantElements = fetched
-      return fetched
+      cachedDescendantElements = result.elements
+      return result.elements
     }
 
     var nodes: [SnapshotNode] = []
-    var truncated = false
+    var hiddenContentHintsByNodeIndex: [Int: (above: Bool, below: Bool)] = [:]
     let rootEvaluation = evaluateSnapshot(context.rootSnapshot, in: context)
     nodes.append(
       makeSnapshotNode(
@@ -118,30 +142,42 @@ extension RunnerTests {
       )
     )
     if context.maxDepth > 0 {
-      let didTruncateFallback = appendCollapsedTabFallbackNodes(
+      appendCollapsedTabFallbackNodes(
         to: &nodes,
         containerSnapshot: context.rootSnapshot,
         resolveElements: collapsedTabDescendants,
         depth: 1,
-        parentIndex: 0,
-        nodeLimit: fastSnapshotLimit
+        parentIndex: 0
       )
-      truncated = truncated || didTruncateFallback
     }
 
     var seen = Set<String>()
-    var stack: [(XCUIElementSnapshot, Int, Int, Int?)] = context.rootSnapshot.children.map {
-      ($0, 1, 1, 0)
-    }
-
-    while let (snapshot, depth, visibleDepth, parentIndex) = stack.popLast() {
-      if nodes.count >= fastSnapshotLimit {
-        truncated = true
-        break
+    let rootScrollAnchor = scrollContainerAnchor(
+      for: context.rootSnapshot,
+      visible: rootEvaluation.visible,
+      nodeIndex: 0
+    )
+    var stack: [(XCUIElementSnapshot, Int, Int, Int?, (index: Int, rect: CGRect)?)] =
+      context.rootSnapshot.children.map {
+        ($0, 1, 1, 0, rootScrollAnchor)
       }
+
+    while let (snapshot, depth, visibleDepth, parentIndex, nearestScrollAnchor) = stack.popLast() {
       if let limit = options.depth, depth > limit { continue }
 
       let evaluation = evaluateSnapshot(snapshot, in: context)
+      let regularVisible = isVisibleInRegularSnapshot(
+        snapshot.frame,
+        viewport: context.viewport,
+        scrollContainerAnchor: nearestScrollAnchor
+      )
+      if !regularVisible, let nearestScrollAnchor {
+        rememberHiddenContentHint(
+          for: snapshot.frame,
+          relativeTo: nearestScrollAnchor,
+          hints: &hiddenContentHintsByNodeIndex
+        )
+      }
       let include = shouldInclude(
         snapshot: snapshot,
         label: evaluation.label,
@@ -149,7 +185,8 @@ extension RunnerTests {
         valueText: evaluation.valueText,
         options: options,
         hittable: evaluation.hittable,
-        visible: evaluation.visible
+        visible: regularVisible,
+        regularSnapshot: true
       )
 
       let key = "\(snapshot.elementType)-\(evaluation.label)-\(evaluation.identifier)-\(snapshot.frame.origin.x)-\(snapshot.frame.origin.y)"
@@ -161,8 +198,20 @@ extension RunnerTests {
       let currentIndex = include && !isDuplicate ? nodes.count : parentIndex
       if depth < context.maxDepth {
         let nextVisibleDepth = include && !isDuplicate ? visibleDepth + 1 : visibleDepth
+        let nextScrollContainerAnchor: (index: Int, rect: CGRect)?
+        if include && !isDuplicate {
+          nextScrollContainerAnchor =
+            scrollContainerAnchor(
+              for: snapshot,
+              visible: regularVisible,
+              nodeIndex: currentIndex
+            )
+            ?? nearestScrollAnchor
+        } else {
+          nextScrollContainerAnchor = nearestScrollAnchor
+        }
         for child in snapshot.children.reversed() {
-          stack.append((child, depth + 1, nextVisibleDepth, currentIndex))
+          stack.append((child, depth + 1, nextVisibleDepth, currentIndex, nextScrollContainerAnchor))
         }
       }
 
@@ -179,39 +228,42 @@ extension RunnerTests {
         )
       )
       if visibleDepth < context.maxDepth {
-        let didTruncateFallback = appendCollapsedTabFallbackNodes(
+        appendCollapsedTabFallbackNodes(
           to: &nodes,
           containerSnapshot: snapshot,
           resolveElements: collapsedTabDescendants,
           depth: visibleDepth + 1,
-          parentIndex: index,
-          nodeLimit: fastSnapshotLimit
+          parentIndex: index
         )
-        truncated = truncated || didTruncateFallback
       }
 
     }
 
-    return DataPayload(nodes: nodes, truncated: truncated)
+    return DataPayload(
+      nodes: applyHiddenContentHints(hiddenContentHintsByNodeIndex, to: nodes),
+      truncated: false
+    )
   }
 
   func snapshotRaw(app: XCUIApplication, options: SnapshotOptions) throws -> DataPayload {
     if let blocking = blockingSystemAlertSnapshot() {
       return blocking
     }
+    return try runSnapshotCapturePlan(
+      Self.rawDiagnosticPlan,
+      app: app,
+      options: options,
+      terminal: .throwOnAXFailure
+    )
+  }
 
-    guard let context = try makeSnapshotTraversalContext(app: app, options: options) else {
-      return DataPayload(nodes: [], truncated: false)
-    }
-
+  func rawTreeSnapshotPayload(
+    context: SnapshotTraversalContext,
+    options: SnapshotOptions
+  ) throws -> DataPayload {
     var nodes: [SnapshotNode] = []
-    var truncated = false
 
-    func walk(_ snapshot: XCUIElementSnapshot, depth: Int, parentIndex: Int?) {
-      if nodes.count >= maxSnapshotElements {
-        truncated = true
-        return
-      }
+    func walk(_ snapshot: XCUIElementSnapshot, depth: Int, parentIndex: Int?) throws {
       if let limit = options.depth, depth > limit { return }
 
       let evaluation = evaluateSnapshot(snapshot, in: context)
@@ -226,6 +278,9 @@ extension RunnerTests {
       )
       let currentIndex = include ? nodes.count : parentIndex
       if include {
+        if nodes.count >= Self.rawSnapshotMaxNodes {
+          throw rawSnapshotTooLargeFailure(nodeCount: nodes.count + 1)
+        }
         nodes.append(
           makeSnapshotNode(
             snapshot: snapshot,
@@ -239,13 +294,207 @@ extension RunnerTests {
 
       let children = snapshot.children
       for child in children {
-        walk(child, depth: depth + 1, parentIndex: currentIndex)
-        if truncated { return }
+        try walk(child, depth: depth + 1, parentIndex: currentIndex)
       }
     }
 
-    walk(context.rootSnapshot, depth: 0, parentIndex: nil)
+    try walk(context.rootSnapshot, depth: 0, parentIndex: nil)
+    return DataPayload(nodes: nodes, truncated: false)
+  }
+
+  func snapshotFlatInteractive(app: XCUIApplication, options: SnapshotOptions) -> DataPayload {
+    var nodes: [SnapshotNode] = [
+      interactiveRootNode(rect: .zero)
+    ]
+    if options.depth == 0 {
+      return DataPayload(nodes: nodes, truncated: false)
+    }
+
+    let deadline = options.interactiveOnly
+      ? Date().addingTimeInterval(Self.flatInteractiveFallbackBudget)
+      : Date.distantFuture
+    let viewport = safeSnapshotViewport(app: app)
+    var seen = Set<String>()
+    var candidates: [SnapshotNode] = []
+    let flatElements = flatInteractiveElements(app: app, deadline: deadline)
+    var truncated = flatElements.truncated
+    for element in flatElements.elements {
+      if Date() >= deadline {
+        NSLog("AGENT_DEVICE_RUNNER_SNAPSHOT_FLAT_FALLBACK_DEADLINE")
+        truncated = true
+        break
+      }
+      guard let node = flatSnapshotNode(
+        element: element,
+        index: 0,
+        parentIndex: 0,
+        viewport: viewport,
+        options: options
+      ) else {
+        continue
+      }
+      let key = "\(node.type)-\(node.label ?? "")-\(node.identifier ?? "")-\(node.value ?? "")-\(node.rect.x)-\(node.rect.y)-\(node.rect.width)-\(node.rect.height)"
+      if seen.contains(key) { continue }
+      seen.insert(key)
+      candidates.append(node)
+    }
+    candidates.sort { left, right in
+      if left.rect.y != right.rect.y {
+        return left.rect.y < right.rect.y
+      }
+      if left.rect.x != right.rect.x {
+        return left.rect.x < right.rect.x
+      }
+      return left.type < right.type
+    }
+
+    // The synthetic root doubles as the daemon's viewport (find.ts prefers on-screen matches
+    // inside nodes[0].rect): use the real screen viewport when capture produced a finite one,
+    // so off-screen candidates can never inflate the root and masquerade as on-screen.
+    let rootRect = viewport.isInfinite || viewport.isNull || viewport.isEmpty
+      ? interactiveRootFrame(for: candidates)
+      : viewport
+    nodes[0] = interactiveRootNode(rect: rootRect)
+    for candidate in candidates {
+      nodes.append(
+        SnapshotNode(
+          index: nodes.count,
+          type: candidate.type,
+          label: candidate.label,
+          identifier: candidate.identifier,
+          value: candidate.value,
+          rect: candidate.rect,
+          enabled: candidate.enabled,
+          focused: candidate.focused,
+          selected: candidate.selected,
+          hittable: candidate.hittable,
+          depth: 1,
+          parentIndex: 0,
+          hiddenContentAbove: nil,
+          hiddenContentBelow: nil
+        )
+      )
+    }
     return DataPayload(nodes: nodes, truncated: truncated)
+  }
+
+  func snapshotAccessibilityUnavailable(failure: SnapshotCaptureFailure) -> DataPayload {
+    NSLog("AGENT_DEVICE_RUNNER_SNAPSHOT_AX_UNAVAILABLE=%@", failure.message)
+    invalidateCachedTarget(reason: Self.axSnapshotUnavailableReason)
+    // This is a planned terminal result, so it carries the structured verdict like every other
+    // planned snapshot — downstream sparse handling keys off the verdict, not node shapes.
+    return sparseTruncatedSnapshotPayload(
+      message: recoveredSnapshotMessage(failure),
+      snapshotQuality: SnapshotQuality(
+        state: "sparse",
+        backend: SnapshotBackendKind.recursiveTree.rawValue,
+        reason: failure.message,
+        reasonCode: "ax-rejected",
+        effectiveDepth: nil,
+        collapsedLeafIndexes: nil
+      ),
+      runnerFatal: true,
+      runnerFatalReason: Self.axSnapshotUnavailableReason
+    )
+  }
+
+  private func recoveredSnapshotMessage(_ failure: SnapshotCaptureFailure) -> String {
+    return "\(failure.message) Hint: \(failure.hint)"
+  }
+
+  private func rawSnapshotTooLargeFailure(nodeCount: Int) -> SnapshotCaptureFailure {
+    SnapshotCaptureFailure(
+      code: Self.rawSnapshotTooLargeCode,
+      message: "iOS raw snapshot exceeded \(Self.rawSnapshotMaxNodes) nodes while walking node \(nodeCount).",
+      hint: Self.rawSnapshotTooLargeHint
+    )
+  }
+
+  func sparseTruncatedSnapshotPayload(
+    message: String? = nil,
+    snapshotQuality: SnapshotQuality? = nil,
+    runnerFatal: Bool? = nil,
+    runnerFatalReason: String? = nil
+  ) -> DataPayload {
+    return DataPayload(
+      message: message,
+      nodes: [interactiveRootNode(rect: .zero)],
+      truncated: true,
+      snapshotQuality: snapshotQuality,
+      runnerFatal: runnerFatal,
+      runnerFatalReason: runnerFatalReason
+    )
+  }
+
+  func testSnapshotAccessibilityUnavailableMarksSparseSnapshotRunnerFatal() {
+    currentApp = app
+    currentBundleId = "com.example.app"
+
+    let payload = snapshotAccessibilityUnavailable(
+      failure: SnapshotCaptureFailure(
+        code: Self.axSnapshotErrorCode,
+        message: Self.axSnapshotFailureMessage,
+        hint: Self.axSnapshotHint
+      )
+    )
+
+    XCTAssertEqual(payload.message, "\(Self.axSnapshotFailureMessage) Hint: \(Self.axSnapshotHint)")
+    XCTAssertEqual(payload.nodes?.count, 1)
+    XCTAssertEqual(payload.nodes?.first?.type, "Application")
+    XCTAssertEqual(payload.truncated, true)
+    XCTAssertEqual(payload.runnerFatal, true)
+    XCTAssertEqual(payload.runnerFatalReason, Self.axSnapshotUnavailableReason)
+    XCTAssertNil(currentApp)
+    XCTAssertNil(currentBundleId)
+  }
+
+  func testRecoveredSnapshotMessagePreservesHint() {
+    let message = recoveredSnapshotMessage(
+      SnapshotCaptureFailure(
+        code: Self.axSnapshotErrorCode,
+        message: Self.axSnapshotFailureMessage,
+        hint: Self.axSnapshotHint
+      )
+    )
+
+    XCTAssertTrue(message.contains(Self.axSnapshotFailureMessage))
+    XCTAssertTrue(message.contains(Self.axSnapshotHint))
+  }
+
+  func testRawSnapshotTooLargeFailureIsStructured() {
+    let failure = rawSnapshotTooLargeFailure(nodeCount: Self.rawSnapshotMaxNodes + 1)
+
+    XCTAssertEqual(failure.code, Self.rawSnapshotTooLargeCode)
+    XCTAssertTrue(failure.message.contains("\(Self.rawSnapshotMaxNodes) nodes"))
+    XCTAssertEqual(failure.hint, Self.rawSnapshotTooLargeHint)
+  }
+
+  private func interactiveRootNode(rect: CGRect) -> SnapshotNode {
+    SnapshotNode(
+      index: 0,
+      type: "Application",
+      label: nil,
+      identifier: nil,
+      value: nil,
+      rect: snapshotRect(from: rect),
+      enabled: true,
+      focused: nil,
+      selected: nil,
+      hittable: false,
+      depth: 0,
+      parentIndex: nil,
+      hiddenContentAbove: nil,
+      hiddenContentBelow: nil
+    )
+  }
+
+  private func interactiveRootFrame(for candidates: [SnapshotNode]) -> CGRect {
+    guard !candidates.isEmpty else {
+      return .zero
+    }
+    let maxX = candidates.map { CGFloat($0.rect.x + $0.rect.width) }.max() ?? 0
+    let maxY = candidates.map { CGFloat($0.rect.y + $0.rect.height) }.max() ?? 0
+    return CGRect(x: 0, y: 0, width: max(1, maxX), height: max(1, maxY))
   }
 
   func snapshotRect(from frame: CGRect) -> SnapshotRect {
@@ -266,13 +515,11 @@ extension RunnerTests {
     valueText: String?,
     options: SnapshotOptions,
     hittable: Bool,
-    visible: Bool
+    visible: Bool,
+    regularSnapshot: Bool = false
   ) -> Bool {
     let type = snapshot.elementType
     let hasContent = !label.isEmpty || !identifier.isEmpty || (valueText != nil)
-    if options.compact && type == .other && !hasContent && !hittable {
-      if snapshot.children.count <= 1 { return false }
-    }
     if options.interactiveOnly {
       if isScrollableContainer(snapshot, visible: visible) { return true }
       #if os(macOS)
@@ -285,8 +532,9 @@ extension RunnerTests {
       if hasContent { return true }
       return false
     }
-    if options.compact {
-      return hasContent || hittable
+    if regularSnapshot {
+      if type == .application || type == .window { return true }
+      return visible
     }
     return true
   }
@@ -310,7 +558,7 @@ extension RunnerTests {
     return true
   }
 
-  private func makeSnapshotTraversalContext(
+  func makeSnapshotTraversalContext(
     app: XCUIApplication,
     options: SnapshotOptions
   ) throws -> SnapshotTraversalContext? {
@@ -353,7 +601,7 @@ extension RunnerTests {
     return nil
   }
 
-  private func safeSnapshotViewport(app: XCUIApplication) -> CGRect {
+  func safeSnapshotViewport(app: XCUIApplication) -> CGRect {
     safely("SNAPSHOT_VIEWPORT", CGRect.infinite) { snapshotViewport(app: app) }
   }
 
@@ -366,11 +614,12 @@ extension RunnerTests {
   }
 
   private func axSnapshotFailure(_ message: String) -> SnapshotCaptureFailure {
+    let detail = message.trimmingCharacters(in: .whitespacesAndNewlines)
     let failureMessage: String
-    if Self.hasAxIllegalArgumentCode(message) {
-      failureMessage = "iOS XCTest snapshot failed with kAXErrorIllegalArgument. \(message)"
+    if detail.isEmpty {
+      failureMessage = Self.axSnapshotFailureMessage
     } else {
-      failureMessage = "iOS XCTest snapshot failed while serializing the accessibility tree. \(message)"
+      failureMessage = "\(Self.axSnapshotFailureMessage) \(detail)"
     }
     return SnapshotCaptureFailure(
       code: Self.axSnapshotErrorCode,
@@ -381,12 +630,12 @@ extension RunnerTests {
 
   private static func isAxIllegalArgument(_ message: String) -> Bool {
     let normalized = message.lowercased()
-    return hasAxIllegalArgumentCode(normalized)
+    return normalized.contains("kaxerrorillegalargument")
       || (normalized.contains("illegal argument") && normalized.contains("snapshot"))
   }
 
-  private static func hasAxIllegalArgumentCode(_ message: String) -> Bool {
-    return message.lowercased().contains("kaxerrorillegalargument")
+  static func isAxSnapshotFailure(_ failure: SnapshotCaptureFailure) -> Bool {
+    failure.code == Self.axSnapshotErrorCode || isAxIllegalArgument(failure.message)
   }
 
   private func evaluateSnapshot(
@@ -490,10 +739,6 @@ extension RunnerTests {
   }
 
   private func snapshotViewport(app: XCUIApplication) -> CGRect {
-    let windows = app.windows.allElementsBoundByIndex
-    if let window = windows.first(where: { $0.exists && !$0.frame.isNull && !$0.frame.isEmpty }) {
-      return window.frame
-    }
     let appFrame = app.frame
     if !appFrame.isNull && !appFrame.isEmpty {
       return appFrame
@@ -514,9 +759,19 @@ extension RunnerTests {
     return nil
   }
 
-  private func isVisibleInViewport(_ rect: CGRect, _ viewport: CGRect) -> Bool {
+  func isVisibleInViewport(_ rect: CGRect, _ viewport: CGRect) -> Bool {
     if rect.isNull || rect.isEmpty { return false }
     return rect.intersects(viewport)
+  }
+
+  private func isVisibleInRegularSnapshot(
+    _ rect: CGRect,
+    viewport: CGRect,
+    scrollContainerAnchor: (index: Int, rect: CGRect)?
+  ) -> Bool {
+    if !isVisibleInViewport(rect, viewport) { return false }
+    guard let scrollContainerAnchor else { return true }
+    return isVisibleInViewport(rect, scrollContainerAnchor.rect)
   }
 
   private func appendCollapsedTabFallbackNodes(
@@ -524,9 +779,8 @@ extension RunnerTests {
     containerSnapshot: XCUIElementSnapshot,
     resolveElements: () -> [XCUIElement],
     depth: Int,
-    parentIndex: Int,
-    nodeLimit: Int
-  ) -> Bool {
+    parentIndex: Int
+  ) {
     let fallbackNodes = collapsedTabFallbackNodes(
       for: containerSnapshot,
       resolveElements: resolveElements,
@@ -534,11 +788,62 @@ extension RunnerTests {
       depth: depth,
       parentIndex: parentIndex
     )
-    if fallbackNodes.isEmpty { return false }
-    let remaining = max(0, nodeLimit - nodes.count)
-    if remaining == 0 { return true }
-    nodes.append(contentsOf: fallbackNodes.prefix(remaining))
-    return fallbackNodes.count > remaining
+    nodes.append(contentsOf: fallbackNodes)
+  }
+
+  private func scrollContainerAnchor(
+    for snapshot: XCUIElementSnapshot,
+    visible: Bool,
+    nodeIndex: Int?
+  ) -> (index: Int, rect: CGRect)? {
+    guard let nodeIndex else { return nil }
+    if !isScrollableContainer(snapshot, visible: visible) { return nil }
+    return (nodeIndex, snapshot.frame)
+  }
+
+  private func rememberHiddenContentHint(
+    for frame: CGRect,
+    relativeTo scrollContainerAnchor: (index: Int, rect: CGRect),
+    hints: inout [Int: (above: Bool, below: Bool)]
+  ) {
+    if frame.isNull || frame.isEmpty { return }
+    var hint = hints[scrollContainerAnchor.index] ?? (above: false, below: false)
+    if frame.maxY <= scrollContainerAnchor.rect.minY {
+      hint.above = true
+    } else if frame.minY >= scrollContainerAnchor.rect.maxY {
+      hint.below = true
+    } else {
+      return
+    }
+    hints[scrollContainerAnchor.index] = hint
+  }
+
+  private func applyHiddenContentHints(
+    _ hints: [Int: (above: Bool, below: Bool)],
+    to nodes: [SnapshotNode]
+  ) -> [SnapshotNode] {
+    if hints.isEmpty { return nodes }
+    return nodes.map { node in
+      guard let hint = hints[node.index] else { return node }
+      let hiddenContentAbove: Bool? = (node.hiddenContentAbove == true || hint.above) ? true : nil
+      let hiddenContentBelow: Bool? = (node.hiddenContentBelow == true || hint.below) ? true : nil
+      return SnapshotNode(
+        index: node.index,
+        type: node.type,
+        label: node.label,
+        identifier: node.identifier,
+        value: node.value,
+        rect: node.rect,
+        enabled: node.enabled,
+        focused: node.focused,
+        selected: node.selected,
+        hittable: node.hittable,
+        depth: node.depth,
+        parentIndex: node.parentIndex,
+        hiddenContentAbove: hiddenContentAbove,
+        hiddenContentBelow: hiddenContentBelow
+      )
+    }
   }
 
   private func collapsedTabFallbackNodes(
@@ -710,8 +1015,122 @@ extension RunnerTests {
     return containerLabel == label && containerIdentifier == identifier
   }
 
-  private func safeSnapshotElementsQuery(_ fetch: () -> [XCUIElement]) -> [XCUIElement] {
-    safely("SNAPSHOT_QUERY", [], fetch)
+  private func flatInteractiveElements(
+    app: XCUIApplication,
+    deadline: Date
+  ) -> (elements: [XCUIElement], truncated: Bool) {
+    let queries: [XCUIElementQuery] = [
+      app.buttons,
+      app.links,
+      app.textFields,
+      app.secureTextFields,
+      app.searchFields,
+      app.textViews,
+      app.switches,
+      app.sliders,
+      app.segmentedControls,
+      app.cells,
+      app.collectionViews,
+      app.tables,
+      app.scrollViews,
+      app.pickers,
+      app.steppers,
+      app.tabBars,
+      app.menuItems,
+      app.staticTexts,
+      app.images
+    ]
+
+    var elements: [XCUIElement] = []
+    var truncated = false
+    for query in queries {
+      if Date() >= deadline {
+        NSLog("AGENT_DEVICE_RUNNER_SNAPSHOT_FLAT_FALLBACK_DEADLINE")
+        truncated = true
+        break
+      }
+      let result = snapshotElementsQuery {
+        query.allElementsBoundByIndex
+      }
+      elements.append(contentsOf: result.elements)
+      if result.axUnavailable {
+        break
+      }
+    }
+    return (elements, truncated)
+  }
+
+  private func snapshotElementsQuery(
+    _ fetch: () -> [XCUIElement]
+  ) -> (elements: [XCUIElement], axUnavailable: Bool) {
+    let (elements, exceptionMessage) = catchingObjCException(fallback: [], fetch)
+    guard let exceptionMessage else {
+      return (elements, false)
+    }
+    NSLog("AGENT_DEVICE_RUNNER_SNAPSHOT_QUERY_IGNORED_EXCEPTION=%@", exceptionMessage)
+    if Self.isAxIllegalArgument(exceptionMessage) {
+      invalidateCachedTarget(reason: "ax_snapshot_query_unavailable")
+      return ([], true)
+    }
+    return ([], false)
+  }
+
+  private func flatSnapshotNode(
+    element: XCUIElement,
+    index: Int,
+    parentIndex: Int?,
+    viewport: CGRect,
+    options: SnapshotOptions
+  ) -> SnapshotNode? {
+    var node: SnapshotNode?
+    let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
+      if !element.exists { return }
+      let frame = element.frame
+      if frame.isNull || frame.isEmpty { return }
+      let visible = isVisibleInViewport(frame, viewport)
+      if options.interactiveOnly && !visible { return }
+      #if os(macOS)
+        if !visible { return }
+      #endif
+      let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+      let identifier = element.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+      let valueText = snapshotValueText(element)
+      let elementType = element.elementType
+      let enabled = element.isEnabled
+      let hittable = visible && enabled && element.isHittable
+      let filterNode = FlatSnapshotFilterNode(
+        isRoot: false,
+        label: label,
+        identifier: identifier,
+        valueText: valueText,
+        visible: visible
+      )
+      if !flatSnapshotFilterDecision(filterNode, options: options, insideMatchedScope: false).include {
+        return
+      }
+
+      node = SnapshotNode(
+        index: index,
+        type: elementTypeName(elementType),
+        label: label.isEmpty ? nil : label,
+        identifier: identifier.isEmpty ? nil : identifier,
+        value: valueText,
+        rect: snapshotRect(from: frame),
+        enabled: enabled,
+        focused: elementHasFocus(element) ? true : nil,
+        selected: element.isSelected ? true : nil,
+        hittable: hittable,
+        depth: 1,
+        parentIndex: parentIndex,
+        hiddenContentAbove: nil,
+        hiddenContentBelow: nil
+      )
+    })
+    if let exceptionMessage {
+      NSLog("AGENT_DEVICE_RUNNER_SNAPSHOT_FLAT_IGNORED_EXCEPTION=%@", exceptionMessage)
+      return nil
+    }
+    return node
   }
 
   private func isScrollableContainer(_ snapshot: XCUIElementSnapshot, visible: Bool) -> Bool {

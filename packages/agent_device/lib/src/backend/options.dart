@@ -119,11 +119,13 @@ class BackendScrollOptions {
   final String direction; // 'up' | 'down' | 'left' | 'right'
   final int? amount;
   final int? pixels;
+  final int? durationMs;
 
   const BackendScrollOptions({
     required this.direction,
     this.amount,
     this.pixels,
+    this.durationMs,
   });
 }
 

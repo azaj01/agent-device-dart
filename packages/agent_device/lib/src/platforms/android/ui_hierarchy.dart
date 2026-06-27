@@ -36,6 +36,11 @@ class AndroidUiNodeMetadata {
   final bool? visibleToUser;
   final int? drawingOrder;
 
+  /// Window type from `window-type` attribute (`1` = application, `3` = system).
+  /// Only present on window-root nodes emitted by the helper in
+  /// interactive-windows capture mode.
+  final int? windowType;
+
   const AndroidUiNodeMetadata({
     required this.text,
     required this.desc,
@@ -51,6 +56,7 @@ class AndroidUiNodeMetadata {
     this.password,
     this.visibleToUser,
     this.drawingOrder,
+    this.windowType,
   });
 }
 
@@ -97,6 +103,7 @@ AndroidUiNodeMetadata _readAndroidUiNodeMetadata(String node) {
     password: boolAttr('password'),
     visibleToUser: boolAttr('visible-to-user'),
     drawingOrder: intAttr('drawing-order'),
+    windowType: intAttr('window-type'),
   );
 }
 
@@ -419,7 +426,7 @@ AndroidUiHierarchy parseUiHierarchyTree(String xml) {
   // UiAutomation can expose covered surfaces (e.g. background React Navigation
   // screens) in the same accessibility window. If a higher drawing-order
   // sibling fully covers a node, agents should only see the foreground one.
-  _pruneAndroidCoveredSubtrees(root, <AndroidUiHierarchy, bool>{});
+  _pruneAndroidCoveredSubtrees(root, _AndroidTreePruneState());
 
   return root;
 }
@@ -432,19 +439,25 @@ void _pruneAndroidInvisibleSubtrees(AndroidUiHierarchy node) {
   }
 }
 
+/// Memoization state for the covered-subtrees pruning pass.
+class _AndroidTreePruneState {
+  /// Cache for [_hasActionableDescendant] results — keyed by node identity.
+  final Map<AndroidUiHierarchy, bool> actionableContentMemo = {};
+}
+
 /// Drop sibling subtrees fully covered (≥90% area) by a higher drawing-order
 /// sibling that carries agent-visible content. Depth-first so nested overlaps
 /// resolve before their parents are evaluated.
 void _pruneAndroidCoveredSubtrees(
   AndroidUiHierarchy node,
-  Map<AndroidUiHierarchy, bool> agentVisibleContentMemo,
+  _AndroidTreePruneState state,
 ) {
   for (final child in node.children) {
-    _pruneAndroidCoveredSubtrees(child, agentVisibleContentMemo);
+    _pruneAndroidCoveredSubtrees(child, state);
   }
   if (node.children.length < 2) return;
   final coveringCandidates = node.children
-      .where((c) => _canCoverSibling(c, agentVisibleContentMemo))
+      .where((c) => _canCoverSibling(c, state))
       .toList();
   if (coveringCandidates.isEmpty) return;
   node.children.removeWhere(
@@ -476,36 +489,37 @@ bool _isCoveredByHigherDrawingOrderSibling(
 
 bool _canCoverSibling(
   AndroidUiHierarchy node,
-  Map<AndroidUiHierarchy, bool> memo,
+  _AndroidTreePruneState state,
 ) {
   return node.visibleToUser != false &&
       node.drawingOrder != null &&
       _hasPositiveRect(node) &&
-      _hasAgentVisibleContent(node, memo);
+      (_hasOwnAgentVisibleContent(node) || _hasActionableDescendant(node, state));
 }
 
-bool _hasAgentVisibleContent(
-  AndroidUiHierarchy node,
-  Map<AndroidUiHierarchy, bool> memo,
-) {
-  final cached = memo[node];
-  if (cached != null) return cached;
-  final result = _computeHasAgentVisibleContent(node, memo);
-  memo[node] = result;
-  return result;
-}
-
-bool _computeHasAgentVisibleContent(
-  AndroidUiHierarchy node,
-  Map<AndroidUiHierarchy, bool> memo,
-) {
+bool _hasOwnAgentVisibleContent(AndroidUiHierarchy node) {
   if (node.visibleToUser == false) return false;
   if (node.hittable ?? false) return true;
   final label = node.label?.trim() ?? '';
   if (label.isNotEmpty && !_isGenericAndroidId(label)) return true;
   final identifier = node.identifier?.trim() ?? '';
   if (identifier.isNotEmpty && !_isGenericAndroidId(identifier)) return true;
-  return node.children.any((child) => _hasAgentVisibleContent(child, memo));
+  return false;
+}
+
+bool _hasActionableDescendant(
+  AndroidUiHierarchy node,
+  _AndroidTreePruneState state,
+) {
+  final cached = state.actionableContentMemo[node];
+  if (cached != null) return cached;
+  final result = node.children.any(
+    (child) =>
+        child.visibleToUser != false &&
+        ((child.hittable ?? false) || _hasActionableDescendant(child, state)),
+  );
+  state.actionableContentMemo[node] = result;
+  return result;
 }
 
 bool _hasPositiveRect(AndroidUiHierarchy node) {

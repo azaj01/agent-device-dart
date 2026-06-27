@@ -410,6 +410,7 @@ class AndroidBackend extends Backend {
         direction,
         amount: options.amount?.toDouble(),
         pixels: options.pixels?.toDouble(),
+        durationMs: options.durationMs,
       );
     });
     if (warning != null) {

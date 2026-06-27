@@ -2,6 +2,36 @@
 
 import '../utils/errors.dart';
 
+/// Upper bound for a caller-provided scroll/swipe duration, mirroring
+/// upstream `SCROLL_DURATION_MAX_MS` (src/core/scroll-command.ts).
+const int scrollDurationMaxMs = 10000;
+
+/// Validate a caller-provided scroll duration in milliseconds.
+///
+/// Returns `null` when [durationMs] is `null` (no duration requested). Throws
+/// [AppError] with `INVALID_ARGS` when the value is negative or exceeds
+/// [scrollDurationMaxMs]. Port of `normalizeScrollDurationMs`.
+int? normalizeScrollDurationMs(
+  int? durationMs, {
+  String field = 'scroll durationMs',
+  int max = scrollDurationMaxMs,
+}) {
+  if (durationMs == null) return null;
+  if (durationMs < 0) {
+    throw AppError(
+      AppErrorCodes.invalidArgs,
+      '$field must be a non-negative integer',
+    );
+  }
+  if (durationMs > max) {
+    throw AppError(
+      AppErrorCodes.invalidArgs,
+      '$field must be a non-negative integer at most $max',
+    );
+  }
+  return durationMs;
+}
+
 enum ScrollDirection {
   up('up'),
   down('down'),

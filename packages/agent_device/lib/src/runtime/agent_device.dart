@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:agent_device/src/backend/backend.dart';
 import 'package:agent_device/src/commands/interaction_targeting.dart';
+import 'package:agent_device/src/core/scroll_gesture.dart' show normalizeScrollDurationMs;
 import 'package:agent_device/src/platforms/platform_selector.dart';
 import 'package:agent_device/src/selectors/selectors.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
@@ -617,9 +618,11 @@ class AgentDevice {
     String direction, {
     int? amount,
     int? pixels,
+    int? durationMs,
     Point? at,
   }) async {
     final scrollTarget = _resolveScrollTarget(direction);
+    final normalizedDurationMs = normalizeScrollDurationMs(durationMs);
     final backendTarget = at == null
         ? const BackendScrollTargetViewport()
         : BackendScrollTargetPoint(at);
@@ -637,6 +640,7 @@ class AgentDevice {
             direction: scrollTarget.direction,
             amount: amount,
             pixels: pixels,
+            durationMs: normalizedDurationMs,
           ),
         ),
       );
@@ -650,6 +654,7 @@ class AgentDevice {
         direction: scrollTarget.direction,
         amount: amount,
         pixels: pixels,
+        durationMs: normalizedDurationMs,
       ),
     );
   }

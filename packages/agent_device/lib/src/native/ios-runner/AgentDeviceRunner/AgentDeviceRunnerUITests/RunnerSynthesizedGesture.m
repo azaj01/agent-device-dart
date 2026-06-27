@@ -47,6 +47,16 @@ static id RunnerPointerPath(
   double durationMs,
   double side
 );
+static id RunnerSwipePointerPath(
+  const RunnerXCTestEventBridge *bridge,
+  CGPoint start,
+  CGPoint end,
+  double durationMs
+);
+static id RunnerTapPointerPath(
+  const RunnerXCTestEventBridge *bridge,
+  CGPoint point
+);
 static CGPoint RunnerPointerPointAt(
   double x,
   double y,
@@ -58,6 +68,8 @@ static CGPoint RunnerPointerPointAt(
   double t,
   double side
 );
+static CGPoint RunnerInterpolatedPoint(CGPoint start, CGPoint end, double t);
+static double RunnerSmoothStep(double t);
 
 @implementation RunnerSynthesizedGesture
 
@@ -85,6 +97,46 @@ static CGPoint RunnerPointerPointAt(
     NSString *reason = exception.reason ?: @"private XCTest event synthesis failed";
     return [NSString stringWithFormat:@"%@: %@", name, reason];
   }
+}
+
++ (NSString * _Nullable)synthesizeSwipeWithApplication:(id)application
+                                                    x:(double)x
+                                                    y:(double)y
+                                                   x2:(double)x2
+                                                   y2:(double)y2
+                                            durationMs:(double)durationMs {
+  @try {
+    return [self trySynthesizeSwipeWithApplication:application
+                                                x:x
+                                                y:y
+                                               x2:x2
+                                               y2:y2
+                                        durationMs:durationMs];
+  } @catch (NSException *exception) {
+    NSString *name = exception.name ?: @"NSException";
+    NSString *reason = exception.reason ?: @"private XCTest event synthesis failed";
+    return [NSString stringWithFormat:@"%@: %@", name, reason];
+  }
+}
+
++ (NSString * _Nullable)synthesizeTapWithApplication:(id)application
+                                                   x:(double)x
+                                                   y:(double)y {
+  @try {
+    return [self trySynthesizeTapWithApplication:application x:x y:y];
+  } @catch (NSException *exception) {
+    NSString *name = exception.name ?: @"NSException";
+    NSString *reason = exception.reason ?: @"private XCTest event synthesis failed";
+    return [NSString stringWithFormat:@"%@: %@", name, reason];
+  }
+}
+
++ (NSInteger)interfaceOrientationForApplication:(id)application {
+  SEL selector = NSSelectorFromString(@"interfaceOrientation");
+  if (![application respondsToSelector:selector]) {
+    return 0;  // UIInterfaceOrientationUnknown
+  }
+  return ((RunnerMsgSendInteger)objc_msgSend)(application, selector);
 }
 
 + (NSString * _Nullable)trySynthesizeTransformWithApplication:(id)application
@@ -141,6 +193,93 @@ static CGPoint RunnerPointerPointAt(
     }
     ((RunnerMsgSendAddPath)objc_msgSend)(record, bridge.addPathSelector, path);
   }
+
+  NSError *error = nil;
+  BOOL ok = ((RunnerMsgSendSynthesize)objc_msgSend)(record, bridge.synthesizeSelector, &error);
+  if (!ok) {
+    NSString *detail = error.localizedDescription ?: @"synthesizeWithError returned false";
+    return [NSString stringWithFormat:@"private XCTest event synthesis failed: %@", detail];
+  }
+  return nil;
+}
+
++ (NSString * _Nullable)trySynthesizeSwipeWithApplication:(id)application
+                                                       x:(double)x
+                                                       y:(double)y
+                                                      x2:(double)x2
+                                                      y2:(double)y2
+                                               durationMs:(double)durationMs {
+  RunnerXCTestEventBridge bridge;
+  NSString *missing = RunnerResolveXCTestEventBridge(application, &bridge);
+  if (missing != nil) {
+    return missing;
+  }
+
+  NSInteger interfaceOrientation =
+    ((RunnerMsgSendInteger)objc_msgSend)(application, bridge.interfaceOrientationSelector);
+  NSInteger targetProcessID = ((RunnerMsgSendInteger)objc_msgSend)(application, bridge.processIDSelector);
+  if (targetProcessID <= 0) {
+    return @"private XCTest event synthesis unavailable: could not resolve target process ID";
+  }
+
+  id record = ((RunnerMsgSendInitRecord)objc_msgSend)(
+    [bridge.recordClass alloc],
+    bridge.initRecordSelector,
+    @"agent-device-swipe",
+    interfaceOrientation
+  );
+  if (record == nil) {
+    return @"private XCTest event synthesis failed: could not create event record";
+  }
+  ((RunnerMsgSendSetInteger)objc_msgSend)(record, bridge.setTargetProcessIDSelector, targetProcessID);
+
+  id path = RunnerSwipePointerPath(&bridge, CGPointMake(x, y), CGPointMake(x2, y2), durationMs);
+  if (path == nil) {
+    return @"private XCTest event synthesis failed: could not create pointer path";
+  }
+  ((RunnerMsgSendAddPath)objc_msgSend)(record, bridge.addPathSelector, path);
+
+  NSError *error = nil;
+  BOOL ok = ((RunnerMsgSendSynthesize)objc_msgSend)(record, bridge.synthesizeSelector, &error);
+  if (!ok) {
+    NSString *detail = error.localizedDescription ?: @"synthesizeWithError returned false";
+    return [NSString stringWithFormat:@"private XCTest event synthesis failed: %@", detail];
+  }
+  return nil;
+}
+
++ (NSString * _Nullable)trySynthesizeTapWithApplication:(id)application
+                                                      x:(double)x
+                                                      y:(double)y {
+  RunnerXCTestEventBridge bridge;
+  NSString *missing = RunnerResolveXCTestEventBridge(application, &bridge);
+  if (missing != nil) {
+    return missing;
+  }
+
+  NSInteger interfaceOrientation =
+    ((RunnerMsgSendInteger)objc_msgSend)(application, bridge.interfaceOrientationSelector);
+  NSInteger targetProcessID = ((RunnerMsgSendInteger)objc_msgSend)(application, bridge.processIDSelector);
+  if (targetProcessID <= 0) {
+    return @"private XCTest event synthesis unavailable: could not resolve target process ID";
+  }
+
+  id record = ((RunnerMsgSendInitRecord)objc_msgSend)(
+    [bridge.recordClass alloc],
+    bridge.initRecordSelector,
+    @"agent-device-tap",
+    interfaceOrientation
+  );
+  if (record == nil) {
+    return @"private XCTest event synthesis failed: could not create event record";
+  }
+  ((RunnerMsgSendSetInteger)objc_msgSend)(record, bridge.setTargetProcessIDSelector, targetProcessID);
+
+  id path = RunnerTapPointerPath(&bridge, CGPointMake(x, y));
+  if (path == nil) {
+    return @"private XCTest event synthesis failed: could not create pointer path";
+  }
+  ((RunnerMsgSendAddPath)objc_msgSend)(record, bridge.addPathSelector, path);
 
   NSError *error = nil;
   BOOL ok = ((RunnerMsgSendSynthesize)objc_msgSend)(record, bridge.synthesizeSelector, &error);
@@ -270,6 +409,44 @@ static id RunnerPointerPath(
   return path;
 }
 
+static id RunnerSwipePointerPath(
+  const RunnerXCTestEventBridge *bridge,
+  CGPoint start,
+  CGPoint end,
+  double durationMs
+) {
+  id path =
+    ((RunnerMsgSendInitPath)objc_msgSend)([bridge->pathClass alloc], bridge->initPathSelector, start, 0.0);
+  if (path == nil) {
+    return nil;
+  }
+
+  int frameCount = MAX(3, (int)(durationMs / 16.0));
+  NSTimeInterval durationSeconds = durationMs / 1000.0;
+  for (int index = 1; index <= frameCount; index += 1) {
+    double t = (double)index / (double)frameCount;
+    CGPoint point = RunnerInterpolatedPoint(start, end, RunnerSmoothStep(t));
+    NSTimeInterval offset = durationSeconds * t;
+    ((RunnerMsgSendPathMove)objc_msgSend)(path, bridge->moveSelector, point, offset);
+  }
+
+  ((RunnerMsgSendPathOffset)objc_msgSend)(path, bridge->liftSelector, durationSeconds);
+  return path;
+}
+
+static id RunnerTapPointerPath(
+  const RunnerXCTestEventBridge *bridge,
+  CGPoint point
+) {
+  id path =
+    ((RunnerMsgSendInitPath)objc_msgSend)([bridge->pathClass alloc], bridge->initPathSelector, point, 0.0);
+  if (path == nil) {
+    return nil;
+  }
+  ((RunnerMsgSendPathOffset)objc_msgSend)(path, bridge->liftSelector, 0.05);
+  return path;
+}
+
 static CGPoint RunnerPointerPointAt(
   double x,
   double y,
@@ -292,6 +469,17 @@ static CGPoint RunnerPointerPointAt(
   double radius = startRadius + (endRadius - startRadius) * t;
   double angle = (-M_PI_2) + (degrees * M_PI / 180.0) * t;
   return CGPointMake(centerX + cos(angle) * radius * side, centerY + sin(angle) * radius * side);
+}
+
+static CGPoint RunnerInterpolatedPoint(CGPoint start, CGPoint end, double t) {
+  return CGPointMake(
+    start.x + (end.x - start.x) * t,
+    start.y + (end.y - start.y) * t
+  );
+}
+
+static double RunnerSmoothStep(double t) {
+  return t * t * (3.0 - 2.0 * t);
 }
 
 @end

@@ -10,6 +10,8 @@ import 'dart:io';
 
 import 'package:agent_device/src/backend/backend.dart';
 import 'package:agent_device/src/backend/device_info.dart';
+import 'package:agent_device/src/core/scroll_gesture.dart'
+    show scrollDurationMaxMs;
 import 'package:agent_device/src/runtime/interaction_target.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart' show Point;
 import 'package:agent_device/src/utils/errors.dart';
@@ -344,7 +346,11 @@ class ScrollCommand extends AgentDeviceCommand {
   ScrollCommand() {
     argParser
       ..addOption('amount', help: 'Scroll amount (viewport multiples).')
-      ..addOption('pixels', help: 'Scroll by an exact pixel count.');
+      ..addOption('pixels', help: 'Scroll by an exact pixel count.')
+      ..addOption(
+        'duration-ms',
+        help: 'Scroll gesture duration in ms (0-$scrollDurationMaxMs).',
+      );
   }
 
   @override
@@ -365,11 +371,13 @@ class ScrollCommand extends AgentDeviceCommand {
     final direction = args.first;
     final amountRaw = argResults?['amount'] as String?;
     final pixelsRaw = argResults?['pixels'] as String?;
+    final durationRaw = argResults?['duration-ms'] as String?;
     final device = await openAgentDevice();
     final result = await device.scroll(
       direction,
       amount: amountRaw == null ? null : int.tryParse(amountRaw),
       pixels: pixelsRaw == null ? null : int.tryParse(pixelsRaw),
+      durationMs: durationRaw == null ? null : int.tryParse(durationRaw),
     );
     emitResult({
       'direction': direction,

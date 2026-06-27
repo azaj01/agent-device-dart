@@ -26,6 +26,7 @@ TS naming conventions → Dart:
 - `Map<number, T>` → `Map<int, T>`
 - TS `undefined` optional fields → Dart nullable `?`
 
+| `platforms/android/snapshot-content-recovery.ts` | `platforms/android/snapshot_content_recovery.dart` |
 | `platforms/android/snapshot-helper-types.ts` | `platforms/android/snapshot_helper_types.dart` |
 | `platforms/android/snapshot-helper-capture.ts` | `platforms/android/snapshot_helper_capture.dart` |
 | `platforms/android/snapshot-helper-install.ts` | `platforms/android/snapshot_helper_install.dart` |
@@ -169,6 +170,30 @@ Notes:
 - `mergeReplacement` in Dart uses named parameters instead of a `Partial<RawSnapshotNode>` spread object
 - `collectDescendants` uses depth-based forward scan (not parentIndex traversal)
 - `normalizeType` was already made public in `processing.dart` as of commit `5671ce9`
+
+| `utils/snapshot-occlusion.ts` | `snapshot/snapshot_occlusion.dart` (new in 2014cb68 port) |
+| `utils/rect-center.ts` | inlined in `snapshot/presentation_tree.dart` (`areRectsApproximatelyEqual`) + `interaction_targeting.dart` (`_areRectsApproximatelyEqual`) |
+| `commands/interaction-targeting.ts` | `commands/interaction_targeting.dart` |
+| `commands/interaction-resolution.ts` | not ported (daemon command dispatch layer) |
+| `utils/snapshot-lines.ts` | `snapshot/lines.dart` |
+
+**Occlusion annotation pattern (2014cb68):**
+- `annotateCoveredSnapshotNodes` walks nodes in presentation order; only overlay-like types (tabbar, toolbar, navigationbar, sheet, dialog, etc.) can be covers — generic containers (CollectionView etc.) cannot
+- `isSnapshotNodeInteractionBlocked(node)` checks `node.interactionBlocked != null` — currently only `'covered'` is used
+- `interactionBlocked: String?` added to `RawSnapshotNode` (non-final, mutable like `presentationHints`)
+- `ActionableTouchResolutionReason.covered` added — early-exits `resolveActionableTouchResolution` when node is already blocked
+- Covered ancestors are skipped in the hittable-ancestor climb; covered children are skipped in same-rect descendant walk
+- Daemon `find.ts` wiring (`interactiveMatchScore` + `dispatchFocusForFindMatch`) NOT ported — daemon-less port has no find handler
+- `interaction-resolution.ts` covered-error surface NOT ported — no runtime command dispatch layer in Dart port
+
+**Android snapshot content-recovery pattern (df490ee8):**
+- New `snapshot_content_recovery.dart` mirrors `snapshot-content-recovery.ts` 1:1
+- `AndroidUiNodeMetadata` gained `windowType` (from `window-type` XML attr) — used by recovery classifier to identify window-root nodes
+- `_pruneAndroidCoveredSubtrees` now takes `_AndroidTreePruneState` (replaces bare `Map<AndroidUiHierarchy, bool>`) for the rename to `actionableContentMemo`
+- `_canCoverSibling` split into `_hasOwnAgentVisibleContent` (own label/id/hittable, no recursion) + `_hasActionableDescendant` (only `hittable` counts in subtree, not labels)
+- Recovery integration in `snapshot.dart`: after building the helper capture record, call `classifyAndroidHelperContentRecovery`; if non-null, call `_recoverAndroidHelperContentUnavailable` which emits a diagnostic, calls `_resetAndroidSnapshotHelperRuntime` (force-stop + 200ms delay), then falls through to `_captureStockUiHierarchy`
+- Upstream uses `DeviceInfo` object; Dart uses `String serial` throughout — the recovery helper takes `serial` not `device`
+- TS integration tests with mock ADB not ported (no mock-command infra in Dart test suite); pure-function recovery classifier unit-tested instead
 
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.

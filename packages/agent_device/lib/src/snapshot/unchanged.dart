@@ -128,6 +128,8 @@ String _buildComparableKey(List<SnapshotNode> nodes) {
     buf.write(',"surface":${_str(n.surface)}');
     buf.write(',"hiddenContentAbove":${n.hiddenContentAbove}');
     buf.write(',"hiddenContentBelow":${n.hiddenContentBelow}');
+    buf.write(',"interactionBlocked":${_str(n.interactionBlocked)}');
+    buf.write(',"presentationHints":${_strList(n.presentationHints)}');
     buf.write('}');
   }
   buf.write(']');
@@ -135,6 +137,11 @@ String _buildComparableKey(List<SnapshotNode> nodes) {
 }
 
 String _str(String? v) => v == null ? 'null' : '"${v.replaceAll('"', '\\"')}"';
+
+String _strList(List<String>? v) {
+  if (v == null) return 'null';
+  return '[${v.map(_str).join(',')}]';
+}
 
 String _rect(Rect? r) {
   if (r == null) return 'null';

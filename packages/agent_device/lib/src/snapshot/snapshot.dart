@@ -78,6 +78,9 @@ class RawSnapshotNode {
   final String? surface;
   bool? hiddenContentAbove;
   bool? hiddenContentBelow;
+  /// Set to `'covered'` when a geometric occlusion pass determines that
+  /// another visible element is painted over this node's center point.
+  String? interactionBlocked;
   List<String>? presentationHints;
 
   RawSnapshotNode({
@@ -101,6 +104,7 @@ class RawSnapshotNode {
     this.surface,
     this.hiddenContentAbove,
     this.hiddenContentBelow,
+    this.interactionBlocked,
     this.presentationHints,
   });
 
@@ -126,6 +130,7 @@ class RawSnapshotNode {
     if (surface != null) 'surface': surface,
     if (hiddenContentAbove != null) 'hiddenContentAbove': hiddenContentAbove,
     if (hiddenContentBelow != null) 'hiddenContentBelow': hiddenContentBelow,
+    if (interactionBlocked != null) 'interactionBlocked': interactionBlocked,
     if (presentationHints != null) 'presentationHints': presentationHints,
   };
 }
@@ -167,6 +172,7 @@ class SnapshotNode extends RawSnapshotNode {
     super.surface,
     super.hiddenContentAbove,
     super.hiddenContentBelow,
+    super.interactionBlocked,
     super.presentationHints,
   });
 
@@ -345,6 +351,7 @@ List<SnapshotNode> attachRefs(List<RawSnapshotNode> nodes) {
       surface: node.surface,
       hiddenContentAbove: node.hiddenContentAbove,
       hiddenContentBelow: node.hiddenContentBelow,
+      interactionBlocked: node.interactionBlocked,
       presentationHints: node.presentationHints,
     );
   }).toList();

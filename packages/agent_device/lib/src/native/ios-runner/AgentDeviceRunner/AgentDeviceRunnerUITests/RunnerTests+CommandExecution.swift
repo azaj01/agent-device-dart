@@ -13,6 +13,14 @@ extension RunnerTests {
     return (gestureStartUptimeMs, currentUptimeMs())
   }
 
+  func synthesizedSwipeFallbackHoldDuration(durationMs: Double) -> TimeInterval {
+    min(max((durationMs / 5.0) / 1000.0, 0.016), 0.120)
+  }
+
+  func coordinateDragHoldDuration() -> TimeInterval {
+    0.050
+  }
+
   func unsupportedResponse(for outcome: RunnerInteractionOutcome) -> Response? {
     switch outcome {
     case .performed:
@@ -32,6 +40,21 @@ extension RunnerTests {
     case drag(DragVisualizationFrame)
   }
 
+  struct GestureFallback {
+    let strategy: String
+    let message: String
+    let hint: String?
+  }
+
+  private func gestureFallback(strategy: String, from outcome: RunnerInteractionOutcome) -> GestureFallback? {
+    switch outcome {
+    case .performed:
+      return nil
+    case .unsupported(let message, let hint):
+      return GestureFallback(strategy: strategy, message: message, hint: hint)
+    }
+  }
+
   /// Runs a gesture action with uniform timing capture. Touch gestures pass `idleTimeout: true`
   /// (the default) to run inside the scroll idle-timeout + quiescence-skip wrapper; synthesis
   /// gestures (pinch/rotate/transform) pass `false` because RunnerSynthesizedGesture governs its
@@ -39,7 +62,7 @@ extension RunnerTests {
   ///
   /// NOTE: a new SYNTHESIS gesture must pass `idleTimeout: false` — the default `true` would wrap
   /// it in the scroll idle-timeout/quiescence-skip path and change its runtime behavior.
-  private func performGesture(
+  func performGesture(
     _ app: XCUIApplication,
     idleTimeout: Bool = true,
     _ action: () -> RunnerInteractionOutcome
@@ -60,7 +83,8 @@ extension RunnerTests {
   private func gestureResponse(
     message: String,
     timing: (gestureStartUptimeMs: Double, gestureEndUptimeMs: Double),
-    frame: GestureFrame = .none
+    frame: GestureFrame = .none,
+    fallback: GestureFallback? = nil
   ) -> Response {
     let data: DataPayload
     switch frame {
@@ -68,7 +92,10 @@ extension RunnerTests {
       data = DataPayload(
         message: message,
         gestureStartUptimeMs: timing.gestureStartUptimeMs,
-        gestureEndUptimeMs: timing.gestureEndUptimeMs
+        gestureEndUptimeMs: timing.gestureEndUptimeMs,
+        gestureFallback: fallback?.strategy,
+        gestureFallbackMessage: fallback?.message,
+        gestureFallbackHint: fallback?.hint
       )
     case .touch(let f):
       data = DataPayload(
@@ -78,7 +105,10 @@ extension RunnerTests {
         x: f?.x,
         y: f?.y,
         referenceWidth: f?.referenceWidth,
-        referenceHeight: f?.referenceHeight
+        referenceHeight: f?.referenceHeight,
+        gestureFallback: fallback?.strategy,
+        gestureFallbackMessage: fallback?.message,
+        gestureFallbackHint: fallback?.hint
       )
     case .drag(let f):
       data = DataPayload(
@@ -90,15 +120,72 @@ extension RunnerTests {
         x2: f.x2,
         y2: f.y2,
         referenceWidth: f.referenceWidth,
-        referenceHeight: f.referenceHeight
+        referenceHeight: f.referenceHeight,
+        gestureFallback: fallback?.strategy,
+        gestureFallbackMessage: fallback?.message,
+        gestureFallbackHint: fallback?.hint
       )
     }
     return Response(ok: true, data: data)
   }
 
+  func testGestureResponseIncludesSynthesizedTapFallbackDiagnostics() {
+    let response = gestureResponse(
+      message: "tapped",
+      timing: (gestureStartUptimeMs: 1, gestureEndUptimeMs: 2),
+      fallback: GestureFallback(
+        strategy: "xctest-coordinate-tap",
+        message: "Runner synthesized coordinate tap is unavailable",
+        hint: "Using XCTest coordinate tap fallback."
+      )
+    )
+
+    XCTAssertEqual(response.ok, true)
+    XCTAssertEqual(response.data?.gestureFallback, "xctest-coordinate-tap")
+    XCTAssertEqual(
+      response.data?.gestureFallbackMessage,
+      "Runner synthesized coordinate tap is unavailable"
+    )
+    XCTAssertEqual(response.data?.gestureFallbackHint, "Using XCTest coordinate tap fallback.")
+  }
+
+  func testXCTestRecordedFailureResponseFailsMutatingSuccesses() throws {
+    let command = try runnerCommandFixture(#"{"command":"tap","commandId":"tap-1"}"#)
+    let response = Response(ok: true, data: DataPayload(message: "tapped"))
+
+    let failureResponse = xctestRecordedFailureResponse(command: command, response: response)
+
+    XCTAssertEqual(failureResponse?.ok, false)
+    XCTAssertEqual(failureResponse?.error?.code, "XCTEST_RECORDED_FAILURE")
+    XCTAssertEqual(
+      failureResponse?.error?.message,
+      "XCTest recorded a failure while executing tap; the action may not have been performed."
+    )
+  }
+
+  func testXCTestRecordedFailureResponseDoesNotWrapReadOnlyOrRunnerFatalResponses() throws {
+    let snapshotCommand = try runnerCommandFixture(#"{"command":"snapshot","commandId":"snapshot-1"}"#)
+    let tapCommand = try runnerCommandFixture(#"{"command":"tap","commandId":"tap-1"}"#)
+    let runnerFatalResponse = Response(
+      ok: true,
+      data: DataPayload(runnerFatal: true, runnerFatalReason: "ax_snapshot_unavailable")
+    )
+
+    XCTAssertNil(
+      xctestRecordedFailureResponse(
+        command: snapshotCommand,
+        response: Response(ok: true, data: DataPayload(nodes: [], truncated: false))
+      )
+    )
+    XCTAssertNil(xctestRecordedFailureResponse(command: tapCommand, response: runnerFatalResponse))
+  }
+
   func execute(command: Command) throws -> Response {
     if command.command == .status {
       return executeStatus(command: command)
+    }
+    if command.command == .uptime {
+      return executeUptime()
     }
     commandJournal.accept(command: command)
     return try executeAccepted(command: command)
@@ -132,6 +219,15 @@ extension RunnerTests {
       )
     }
     return Response(ok: true, data: commandJournal.status(commandId: statusCommandId))
+  }
+
+  func executeUptime() -> Response {
+    // Placeholder value: the transport layer (jsonResponse) overwrites currentUptimeMs with a
+    // fresher send-time stamp on every ok response; kept so direct callers still get a value.
+    Response(
+      ok: true,
+      data: DataPayload(currentUptimeMs: currentUptimeMs())
+    )
   }
 
   private func executeDispatched(command: Command) throws -> Response {
@@ -178,6 +274,7 @@ extension RunnerTests {
     while true {
       var response: Response?
       var swiftError: Error?
+      let failureCountBefore = currentXCTestFailureCount()
       let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
         do {
           response = try self.executeOnMain(command: command)
@@ -187,8 +284,7 @@ extension RunnerTests {
       })
 
       if let exceptionMessage {
-        currentApp = nil
-        currentBundleId = nil
+        invalidateCachedTarget(reason: "objc_exception")
         if !hasRetried, shouldRetryException(command, message: exceptionMessage) {
           NSLog(
             "AGENT_DEVICE_RUNNER_RETRY command=%@ reason=objc_exception",
@@ -214,14 +310,19 @@ extension RunnerTests {
           userInfo: [NSLocalizedDescriptionKey: "command returned no response"]
         )
       }
+      if didRecordXCTestFailure(since: failureCountBefore),
+        let failureResponse = xctestRecordedFailureResponse(command: command, response: response)
+      {
+        invalidateCachedTarget(reason: "xctest_recorded_failure")
+        return failureResponse
+      }
       if !hasRetried, shouldRetryCommand(command), shouldRetryResponse(response) {
         NSLog(
           "AGENT_DEVICE_RUNNER_RETRY command=%@ reason=response_unavailable",
           command.command.rawValue
         )
         hasRetried = true
-        currentApp = nil
-        currentBundleId = nil
+        invalidateCachedTarget(reason: "response_unavailable")
         sleepFor(retryCooldown)
         continue
       }
@@ -231,7 +332,9 @@ extension RunnerTests {
 
   private func executeOnMain(command: Command) throws -> Response {
     var activeApp = currentApp ?? app
-    if !isRunnerLifecycleCommand(command.command) {
+    if shouldSkipAppActivationPreflight(command) {
+      activeApp = resolveAppWithoutActivation(command: command)
+    } else if !isRunnerLifecycleCommand(command.command) {
       let normalizedBundleId = command.appBundleId?
         .trimmingCharacters(in: .whitespacesAndNewlines)
       let requestedBundleId = (normalizedBundleId?.isEmpty == true) ? nil : normalizedBundleId
@@ -316,12 +419,14 @@ extension RunnerTests {
       if let requestedFps = command.fps, (requestedFps < minRecordingFps || requestedFps > maxRecordingFps) {
         return Response(ok: false, error: ErrorPayload(message: "recordStart fps must be between \(minRecordingFps) and \(maxRecordingFps)"))
       }
+      // Dart-port deviation: upstream uses maxSize; Dart port uses quality.
       if let requestedQuality = command.quality, (requestedQuality < minRecordingQuality || requestedQuality > maxRecordingQuality) {
         return Response(ok: false, error: ErrorPayload(message: "recordStart quality must be between \(minRecordingQuality) and \(maxRecordingQuality)"))
       }
       do {
         let resolvedOutPath = resolveRecordingOutPath(requestedOutPath)
         let fpsLabel = command.fps.map(String.init) ?? String(RunnerTests.defaultRecordingFps)
+        // Dart-port deviation: upstream uses maxSize; Dart port uses quality.
         let qualityLabel = command.quality.map(String.init) ?? "native"
         NSLog(
           "AGENT_DEVICE_RUNNER_RECORD_START requestedOutPath=%@ resolvedOutPath=%@ fps=%@ quality=%@",
@@ -357,10 +462,7 @@ extension RunnerTests {
         return Response(ok: false, error: ErrorPayload(message: "failed to stop recording: \(error.localizedDescription)"))
       }
     case .uptime:
-      return Response(
-        ok: true,
-        data: DataPayload(currentUptimeMs: currentUptimeMs())
-      )
+      return executeUptime()
     case .tap:
       if let selectorKey = command.selectorKey, let selectorValue = command.selectorValue {
         let match = findElement(
@@ -374,6 +476,7 @@ extension RunnerTests {
         }
         if let element = match.element {
           let frame = element.frame
+          let isTextEntry = isTextEntryElement(element)
           let touchFrame = frame.isEmpty
             ? nil
             : resolvedTouchVisualizationFrame(app: activeApp, x: frame.midX, y: frame.midY)
@@ -389,7 +492,9 @@ extension RunnerTests {
           if let response = unsupportedResponse(for: outcome) {
             return response
           }
-          waitForTextEntryReadinessAfterTap(app: activeApp, element: element)
+          if isTextEntry {
+            waitForTextEntryReadinessAfterTap(app: activeApp, element: element)
+          }
           return gestureResponse(
             message: match.usedNonHittableFallback ? "tapped via non-hittable coordinate fallback" : "tapped",
             timing: timing,
@@ -411,12 +516,27 @@ extension RunnerTests {
         return Response(ok: false, error: ErrorPayload(message: "element not found"))
       }
       if let x = command.x, let y = command.y {
+        var fallback: GestureFallback?
+        if command.synthesized == true {
+          let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
+            synthesizedTapAt(app: activeApp, x: x, y: y)
+          }
+          if case .performed = outcome {
+            return gestureResponse(message: "tapped", timing: timing)
+          }
+          fallback = gestureFallback(strategy: "xctest-coordinate-tap", from: outcome)
+        }
         let touchFrame = resolvedTouchVisualizationFrame(app: activeApp, x: x, y: y)
         let (timing, outcome) = performGesture(activeApp) { tapAt(app: activeApp, x: x, y: y) }
         if let response = unsupportedResponse(for: outcome) {
           return response
         }
-        return gestureResponse(message: "tapped", timing: timing, frame: .touch(touchFrame))
+        return gestureResponse(
+          message: "tapped",
+          timing: timing,
+          frame: .touch(touchFrame),
+          fallback: fallback
+        )
       }
       return Response(ok: false, error: ErrorPayload(message: "tap requires text or x/y"))
     case .mouseClick:
@@ -442,6 +562,7 @@ extension RunnerTests {
       } catch {
         return Response(ok: false, error: ErrorPayload(message: error.localizedDescription))
       }
+    // Dart-port deviation: tapSeries is not in upstream; kept for Dart fixture tests.
     case .tapSeries:
       guard let x = command.x, let y = command.y else {
         return Response(ok: false, error: ErrorPayload(message: "tapSeries requires x and y"))
@@ -495,29 +616,17 @@ extension RunnerTests {
       guard let x = command.x, let y = command.y, let x2 = command.x2, let y2 = command.y2 else {
         return Response(ok: false, error: ErrorPayload(message: "drag requires x, y, x2, and y2"))
       }
-      let holdDuration = min(max((command.durationMs ?? 60) / 1000.0, 0.016), 10.0)
-      let dragPoints = keyboardAvoidingDragPoints(app: activeApp, x: x, y: y, x2: x2, y2: y2)
-      let dragFrame = resolvedDragVisualizationFrame(
-        app: activeApp,
-        x: dragPoints.x,
-        y: dragPoints.y,
-        x2: dragPoints.x2,
-        y2: dragPoints.y2
+      return executeDragGesture(
+        activeApp: activeApp,
+        x: x,
+        y: y,
+        x2: x2,
+        y2: y2,
+        durationMs: command.durationMs,
+        synthesized: command.synthesized == true,
+        message: "dragged"
       )
-      let (timing, outcome) = performGesture(activeApp) {
-        dragAt(
-          app: activeApp,
-          x: dragPoints.x,
-          y: dragPoints.y,
-          x2: dragPoints.x2,
-          y2: dragPoints.y2,
-          holdDuration: holdDuration
-        )
-      }
-      if let response = unsupportedResponse(for: outcome) {
-        return response
-      }
-      return gestureResponse(message: "dragged", timing: timing, frame: .drag(dragFrame))
+    // Dart-port deviation: dragSeries is not in upstream; kept for Dart fixture tests.
     case .dragSeries:
       guard let x = command.x, let y = command.y, let x2 = command.x2, let y2 = command.y2 else {
         return Response(ok: false, error: ErrorPayload(message: "dragSeries requires x, y, x2, and y2"))
@@ -563,6 +672,142 @@ extension RunnerTests {
         return response
       }
       return gestureResponse(message: "drag series", timing: timing)
+    case .scroll:
+      // Fused frame-resolve + drag scroll for non-tvOS. Resolves the interaction frame via
+      // resolvedTouchReferenceFrame, computes drag endpoints with the Swift port of
+      // buildScrollGesturePlan, then runs the same non-synthesized drag path scroll's drag used.
+      guard let direction = command.direction,
+        direction == "up" || direction == "down" || direction == "left" || direction == "right"
+      else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "scroll requires direction up|down|left|right"
+          )
+        )
+      }
+      let frame = resolvedTouchReferenceFrame(app: activeApp, appFrame: activeApp.frame)
+      guard frame.width > 0, frame.height > 0 else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(message: "scroll could not resolve a usable interaction frame")
+        )
+      }
+      guard let plan = runnerScrollGesturePlan(
+        direction: direction,
+        amount: command.amount,
+        pixels: command.pixels,
+        referenceWidth: frame.width,
+        referenceHeight: frame.height
+      ) else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "scroll could not compute a gesture plan"
+          )
+        )
+      }
+      if let durationMs = command.durationMs,
+        durationMs.isFinite == false || durationMs < 0 || durationMs > 10000
+      {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "scroll durationMs must be between 0 and 10000"
+          )
+        )
+      }
+      return executeDragGesture(
+        activeApp: activeApp,
+        x: frame.minX + plan.x1,
+        y: frame.minY + plan.y1,
+        x2: frame.minX + plan.x2,
+        y2: frame.minY + plan.y2,
+        durationMs: command.durationMs,
+        synthesized: command.durationMs != nil,
+        message: "scrolled"
+      )
+    case .desktopScroll:
+      guard let direction = command.direction,
+        direction == "up" || direction == "down" || direction == "left" || direction == "right"
+      else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "desktopScroll requires direction up|down|left|right"
+          )
+        )
+      }
+      let appFrame = activeApp.frame
+      let frame = resolvedTouchReferenceFrame(app: activeApp, appFrame: appFrame)
+      guard frame.width > 0, frame.height > 0 else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(message: "desktopScroll could not resolve a usable interaction frame")
+        )
+      }
+      guard let plan = runnerScrollGesturePlan(
+        direction: direction,
+        amount: command.amount,
+        pixels: command.pixels,
+        referenceWidth: frame.width,
+        referenceHeight: frame.height
+      ) else {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "desktopScroll could not compute a wheel plan"
+          )
+        )
+      }
+      let x = frame.midX
+      let y = frame.midY
+      let localX = x - (appFrame.isEmpty ? frame.minX : appFrame.minX)
+      let localY = y - (appFrame.isEmpty ? frame.minY : appFrame.minY)
+      if let durationMs = command.durationMs,
+        durationMs.isFinite == false || durationMs < 0 || durationMs > 10000
+      {
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "INVALID_ARGS",
+            message: "desktopScroll durationMs must be between 0 and 10000"
+          )
+        )
+      }
+      let touchFrame = resolvedTouchVisualizationFrame(
+        app: activeApp,
+        x: localX,
+        y: localY
+      )
+      do {
+        var scrollError: Error?
+        let timing = measureGesture {
+          do {
+            try desktopScrollAt(
+              app: activeApp,
+              x: x,
+              y: y,
+              direction: direction,
+              pixels: plan.travelPixels,
+              durationMs: command.durationMs
+            )
+          } catch {
+            scrollError = error
+          }
+        }
+        if let scrollError {
+          throw scrollError
+        }
+        return gestureResponse(message: "scrolled", timing: timing, frame: .touch(touchFrame))
+      } catch {
+        return Response(ok: false, error: ErrorPayload(message: error.localizedDescription))
+      }
     case .remotePress:
       guard let button = tvRemoteButton(from: command.remoteButton) else {
         return Response(ok: false, error: ErrorPayload(message: "remotePress requires remoteButton"))
@@ -581,6 +826,8 @@ extension RunnerTests {
         response = executeTypeCommand(activeApp: activeApp, command: command)
       }
       return response ?? Response(ok: false, error: ErrorPayload(message: "type produced no response"))
+    // Dart-port deviation: interactionFrame is not in upstream; returns the reference frame for
+    // coordinate-based interactions.
     case .interactionFrame:
       let frame = resolvedTouchReferenceFrame(app: activeApp, appFrame: activeApp.frame)
       return Response(
@@ -628,6 +875,7 @@ extension RunnerTests {
       }
       return Response(ok: true, data: DataPayload(text: text))
     case .snapshot:
+      // Dart-port deviation: SnapshotOptions includes compact: Bool that upstream lacks.
       let options = SnapshotOptions(
         interactiveOnly: command.interactiveOnly ?? false,
         compact: command.compact ?? false,
@@ -645,6 +893,7 @@ extension RunnerTests {
         needsPostSnapshotInteractionDelay = true
         return Response(ok: true, data: payload)
       } catch let failure as SnapshotCaptureFailure {
+        invalidateCachedTarget(reason: "ax_snapshot_failure")
         // Other thrown errors fall through to executeOnMainSafely's generic error response.
         return Response(
           ok: false,
@@ -838,7 +1087,10 @@ extension RunnerTests {
           message: "no slider found at (\(x), \(y))"
         ))
       }
-      let steps = command.steps ?? 1
+      // Dart-port deviation: command.sliderSteps (Int?) is the step count for adjustSlider.
+      // Renamed from command.steps to avoid collision with command.steps: [SequenceStep]? added
+      // in upstream for the sequence command.
+      let steps = command.sliderSteps ?? 1
       let action = (command.action ?? "increment").lowercased()
       let sliders = activeApp.sliders.allElementsBoundByIndex.filter {
         $0.exists && $0.frame.contains(point)
@@ -867,6 +1119,8 @@ extension RunnerTests {
         message: "\(action) by \(abs(steps)) step(s)"
       ))
 #endif
+    case .sequence:
+      return executeSequence(command: command, activeApp: activeApp)
     case .rotateGesture:
       guard let degrees = command.degrees, degrees.isFinite else {
         return Response(ok: false, error: ErrorPayload(message: "rotateGesture requires degrees"))
@@ -928,6 +1182,129 @@ extension RunnerTests {
       }
       return gestureResponse(message: "transformedGesture", timing: timing)
     }
+  }
+
+  /// Shared drag execution for `.drag` and the fused `.scroll`. Mirrors the original `.drag` body
+  /// exactly: keyboardAvoidingDragPoints -> resolvedDragVisualizationFrame -> synthesized branch
+  /// (16-10000ms clamp) or non-synthesized dragAt with coordinateDragHoldDuration ->
+  /// gestureResponse(.drag). `.scroll` uses the synthesized path only when a duration is requested.
+  private func executeDragGesture(
+    activeApp: XCUIApplication,
+    x: Double,
+    y: Double,
+    x2: Double,
+    y2: Double,
+    durationMs: Double?,
+    synthesized: Bool,
+    message: String
+  ) -> Response {
+    let dragPoints = keyboardAvoidingDragPoints(app: activeApp, x: x, y: y, x2: x2, y2: y2)
+    let dragFrame = resolvedDragVisualizationFrame(
+      app: activeApp,
+      x: dragPoints.x,
+      y: dragPoints.y,
+      x2: dragPoints.x2,
+      y2: dragPoints.y2
+    )
+    var fallback: GestureFallback?
+    if synthesized {
+      let durationMs = min(max(durationMs ?? 250, 16), 10000)
+      let (timing, outcome) = performGesture(activeApp, idleTimeout: false) {
+        synthesizedDragAt(
+          app: activeApp,
+          x: dragPoints.x,
+          y: dragPoints.y,
+          x2: dragPoints.x2,
+          y2: dragPoints.y2,
+          durationMs: durationMs
+        )
+      }
+      if case .performed = outcome {
+        return gestureResponse(message: message, timing: timing, frame: .drag(dragFrame))
+      }
+      fallback = gestureFallback(strategy: "xctest-coordinate-drag", from: outcome)
+    }
+    let holdDuration = synthesized
+      ? synthesizedSwipeFallbackHoldDuration(durationMs: durationMs ?? 250)
+      : coordinateDragHoldDuration()
+    let (timing, outcome) = performGesture(activeApp) {
+      dragAt(
+        app: activeApp,
+        x: dragPoints.x,
+        y: dragPoints.y,
+        x2: dragPoints.x2,
+        y2: dragPoints.y2,
+        holdDuration: holdDuration
+      )
+    }
+    if let response = unsupportedResponse(for: outcome) {
+      return response
+    }
+    return gestureResponse(
+      message: message,
+      timing: timing,
+      frame: .drag(dragFrame),
+      fallback: fallback
+    )
+  }
+
+  private func currentXCTestFailureCount() -> Int {
+    return testRun?.failureCount ?? 0
+  }
+
+  private func didRecordXCTestFailure(since failureCountBefore: Int) -> Bool {
+    return currentXCTestFailureCount() > failureCountBefore
+  }
+
+  private func xctestRecordedFailureResponse(command: Command, response: Response) -> Response? {
+    guard response.ok else { return nil }
+    if response.data?.runnerFatal == true {
+      return nil
+    }
+    guard !isReadOnlyCommand(command), !isRunnerLifecycleCommand(command.command) else {
+      return nil
+    }
+    return Response(
+      ok: false,
+      error: ErrorPayload(
+        code: "XCTEST_RECORDED_FAILURE",
+        message: "XCTest recorded a failure while executing \(command.command.rawValue); the action may not have been performed.",
+        hint: "The iOS runner session will be restarted. Retry after a fresh snapshot, or use screenshot plus coordinate commands when the accessibility tree is unavailable."
+      )
+    )
+  }
+
+  private func runnerCommandFixture(_ json: String) throws -> Command {
+    try JSONDecoder().decode(Command.self, from: Data(json.utf8))
+  }
+
+  private func shouldSkipAppActivationPreflight(_ command: Command) -> Bool {
+#if os(iOS)
+    // Coordinate-only synthesized taps can run after an AX-fatal screen because they do not need
+    // app activation, window lookup, keyboard lookup, or element resolution. Selector/text taps
+    // intentionally stay on the normal AX path because they need an element query.
+    return command.command == .tap
+      && command.synthesized == true
+      && command.x != nil
+      && command.y != nil
+      && command.text == nil
+      && command.selectorKey == nil
+#else
+    return false
+#endif
+  }
+
+  private func resolveAppWithoutActivation(command: Command) -> XCUIApplication {
+    guard let bundleId = command.appBundleId?
+      .trimmingCharacters(in: .whitespacesAndNewlines),
+      !bundleId.isEmpty
+    else {
+      return currentApp ?? app
+    }
+    if currentBundleId == bundleId, let currentApp {
+      return currentApp
+    }
+    return XCUIApplication(bundleIdentifier: bundleId)
   }
 
   private func executeTypeCommand(activeApp: XCUIApplication, command: Command) -> Response {

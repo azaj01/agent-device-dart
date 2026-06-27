@@ -215,3 +215,181 @@ Tracks which upstream `agent-device` (TypeScript) commits have been ported to th
 | `0313262a` | docs: clarify physical device signing help (#672) | n/a | — | Docs |
 | `6f637d0e` | fix: filter covered Android snapshot surfaces (#675) | ported | (Step 3) | `ui_hierarchy.dart`: parse `visible-to-user`/`drawing-order`; `_pruneAndroidInvisibleSubtrees` + `_pruneAndroidCoveredSubtrees` (≥90% area occlusion by higher drawing-order sibling w/ agent-visible content) wired into `parseUiHierarchyTree`; negative-bounds regex fix. 4 unit tests. Dart uses in-place `removeWhere` (immutable node, growable children) vs upstream reassign. |
 | `041b4822` | feat: add iOS runner prepare command (#673) | n/a | — | Daemon session-prepare handler (pre-warms runner in the long-lived daemon); daemon-less port already launches/reuses the runner on first command. No Swift/runner-protocol change. Optional thin `prepare` CLI nicety deferred. |
+| `2014cb68` | fix: harden covered snapshot targets (#708) | ported | — | New `snapshot_occlusion.dart`: `annotateCoveredSnapshotNodes` + `isSnapshotNodeInteractionBlocked`. Added `interactionBlocked: String?` field to `RawSnapshotNode`/`SnapshotNode`. `interaction_targeting.dart`: `covered` reason added to `ActionableTouchResolutionReason`; early-exit on blocked node; skip blocked hittable ancestors; skip blocked same-rect children. `lines.dart`: `presentationHints` now emitted before the `summarizeTextSurfaces` guard (mirrors upstream). `unchanged.dart`: `interactionBlocked` + `presentationHints` added to comparable presentation. 10 unit tests. Dropped: daemon `find.ts` `interactiveMatchScore` / `dispatchFocusForFindMatch` wiring (daemon-less port has no find handler); `interaction-resolution.ts` `resolveInteractionTarget` refactor + covered error surface (no runtime command dispatch in daemon-less port). |
+| `df490ee8` | fix: recover Android snapshots from system-only helper output (#861) | ported | (0.18.0 gap) | New `snapshot_content_recovery.dart`: `classifyAndroidHelperContentRecovery` classifies empty/system-only/content-poor helper output. `ui_hierarchy.dart`: added `windowType` to `AndroidUiNodeMetadata` (from `window-type` attr); refactored `_pruneAndroidCoveredSubtrees` to use `_AndroidTreePruneState` + split `hasOwnAgentVisibleContent` / `hasActionableDescendant` (tightens cover-qualification: descendants only count if hittable, not labeled). `snapshot.dart`: added `appBundleId` to `AndroidSnapshotOptions`; wired content-recovery check after helper capture; added `_recoverAndroidHelperContentUnavailable` + `_resetAndroidSnapshotHelperRuntime` (force-stop + delay). 12 unit tests for recovery classifier + 1 new `parseUiHierarchy` test. Dropped: upstream test cases that invoke full `snapshotAndroid` with mock ADB (no mock-command infra in Dart port test suite); `examples/test-app` dep bumps (RN, not ported). |
+| `491ad7e9` | fix: improve session ownership and recovery guidance (#674) | n/a | — | Daemon session guidance |
+| `6946c2f1` | fix: allow fresh session device binding (#677) | n/a | — | Daemon session binding |
+| `74007018` | perf: speed up iOS swipes and harden runner cache (#676) | ported | (ios-runner-sync-1) | `RunnerSynthesizedGesture.h/.m`: `synthesizeSwipeWithApplication:x:y:x2:y2:durationMs:` + `synthesizeTapWithApplication:x:y:`; `+CommandExecution`/`+Interaction`/`+Models` updated; daemon runner-cache changes n/a |
+| `86687feb` | fix: restore snapshot request timeout (#680) | n/a | — | Daemon snapshot request timeout |
+| `4eeec609` | 0.16.11 | n/a | — | Version bump |
+| `86db7e83` | fix: align iOS runner cache target metadata (#682) | n/a | — | Daemon runner cache |
+| `3a930717` | docs: update public documentation links (#684) | n/a | — | Docs |
+| `1881f6f2` | 0.16.12 | n/a | — | Version bump |
+| `7ab99986` | fix: stabilize Maestro post-gesture snapshots (#681) | skipped | — | Maestro (out of scope) |
+| `bf21540b` | refactor: consolidate android gesture backend selection (#689) | n/a | — | Daemon Android gesture backend selection; Dart port uses direct adb/multitouch helper |
+| `ad7b3864` | feat: cache iOS runner artifacts during prepare (#688) | n/a | — | Daemon runner artifact cache |
+| `6babdfb6` | 0.16.13 | n/a | — | Version bump |
+| `36012a9e` | fix: update docs router dependency (#691) | n/a | — | Docs dependency |
+| `7d7b4676` | fix: retry iOS runner prepare launch (#692) | n/a | — | Daemon runner prepare retry |
+| `f2424f9d` | refactor: centralize daemon command registry (#693) | n/a | — | Daemon command registry |
+| `aa5b07fa` | fix: keep iOS runner hot across app closes (#700) | ported | (ios-runner-sync-1) | `RunnerTests+Alert.swift`, `+Snapshot.swift` updated (AX snapshot recovery, snapshot freshness after app close); `RunnerTests.swift` change (remove `maxSnapshotElements`/`fastSnapshotLimit`) NOT ported (Dart keeps these fields) |
+| `86971990` | fix: scope runner diagnostics to sessions (#704) | n/a | — | Daemon runner diagnostics |
+| `81448c8f` | feat: add perf metrics and frames commands (#703) | n/a | — | Daemon perf metrics; Dart has own perf harness |
+| `76cee982` | fix: stabilize iOS runner navigation taps (#702) | ported | (ios-runner-sync-1) | `RunnerSynthesizedGesture.h`: `interfaceOrientationForApplication:` declaration; docs/ADR changes n/a |
+| `5c083eac` | fix: harden iOS replay runner prewarm (#705) | ported | (ios-runner-sync-1) | `RunnerTests+Transport.swift`: COMMAND_ACCEPTED / COMMAND_COMPLETED / COMMAND_FAILED NSLog entries; daemon/client prewarm changes n/a |
+| `aa741b47` | fix: recover depth-limited iOS snapshots after AX failures (#706) | ported | (ios-runner-sync-1) | `+Snapshot.swift`: depth-limited AX recovery retry logic |
+| `31ce5903` | feat: add replay test sharding (#707) | n/a | — | Replay sharding (out of scope) |
+| `c89719f7` | fix: decode escaped selector values (#711) | ported | (0.18.0 gap) | `selectors/parse.dart`: `_simpleEscapeReplacements` map (`\n \t \r \\`), `\uXXXX` unicode escape; 4 unit tests in `parse_test.dart`. Port of `selectors-parse.ts` escape logic. |
+| `35f54a86` | fix: resolve Maestro taps from regular snapshots (#709) | ported | (ios-runner-sync-1) | `+Snapshot.swift` updated (Maestro snapshot compat); `RunnerTests.swift` removes `maxSnapshotElements`/`fastSnapshotLimit` — NOT ported (Dart keeps these); Maestro daemon parts skipped |
+| `fe728814` | 0.17.0 | n/a | — | Version bump |
+| `c2b29d56` | fix: stabilize Maestro replay on iOS (#713) | skipped | — | Maestro (out of scope) |
+| `49e59d65` | feat: record replay test videos (#712) | skipped | — | Replay test harness; Dart has own recording |
+| `39e46825` | refactor: deepen runner disposal (#714) | n/a | — | Daemon runner-session lifecycle |
+| `500f4f30` | refactor: deepen replay test attempt module (#715) | n/a | — | Daemon replay internals |
+| `16312d07` | fix: use XCTest drag for iOS swipes (#716) | ported | (ios-runner-sync-1) | `RunnerTests+CommandExecution.swift`: synthesized swipe now routes to coordinate drag; daemon dispatch/series changes n/a |
+| `1de7e73e` | refactor(types): consolidate duplicated types (#717) | n/a | — | TS type consolidation |
+| `22fba871` | feat: add shutdown command (#718) | n/a | — | Daemon shutdown; Dart port already has shutdown |
+| `0f7187f5` | fix: scope source daemon state by worktree (#719) | n/a | — | Daemon state dir |
+| `ab202681` | refactor(types): tuple ownership, LogBackend rename (#720) | n/a | — | TS type refactor |
+| `a544dc15` | refactor(types): NormalizedRect/NormalizedPoint aliases (#721) | n/a | — | TS type aliases |
+| `64557755` | ci: enforce lint and formatting (#732) | n/a | — | CI |
+| `4f95ca88` | fix(daemon): timing-safe token comparison, daemon.json hardening (#731) | n/a | — | Daemon security; no Dart equivalent |
+| `8baeb367` | docs: document daemon trust model (#733) | n/a | — | Docs |
+| `b8172e3d` | perf(daemon): offload PNG decode to worker thread (#734) | n/a | — | Daemon worker thread |
+| `a7efcd46` | chore(fallow): align local runs with CI diff gate (#735) | n/a | — | TS tooling |
+| `aa8a3500` | test(maestro): cover runtime target resolution (#736) | skipped | — | Maestro (out of scope) |
+| `87d6d0ee` | test: cover artifact transfer characterization (#740) | n/a | — | Daemon artifact tests |
+| `b1d62a36` | test: cover daemon-client lifecycle characterization (#739) | n/a | — | Daemon lifecycle tests |
+| `69d296cd` | test: cover daemon HTTP server edge cases (#738) | n/a | — | Daemon HTTP tests |
+| `963ffc25` | refactor: move daemon-shared contracts out of commands (#741) | n/a | — | Daemon refactor |
+| `a0522c7b` | docs: document issue label workflow (#742) | n/a | — | Docs |
+| `712b675c` | refactor: extract daemon artifact client (#744) | n/a | — | Daemon artifact client |
+| `b30292d8` | refactor(types): deepen type consolidation (#743) | n/a | — | TS type refactor |
+| `582710e0` | docs: add agent tightening pass guidance (#746) | n/a | — | Docs |
+| `2dea65e7` | fix: render optimized MCP command output by default (#748) | n/a | — | MCP |
+| `c3224950` | test: cover least-tested parsing modules (#749) | n/a | — | TS test coverage |
+| `b2e4ace1` | fix: focus booted iOS simulators with Device Hub (#750) | n/a | — | Device Hub; daemon-managed simulator focus |
+| `a89d68dd` | feat: export replays to maestro yaml (#751) | skipped | — | Maestro/replay (out of scope) |
+| `f661efd2` | refactor: extract daemon progress parsing (#753) | n/a | — | Daemon internals |
+| `19cdec10` | 0.17.2 | n/a | — | Version bump |
+| `5462d516` | chore(daemon): takeover notice, dev state-dir pruning (#754) | n/a | — | Daemon state |
+| `ded6a167` | fix: use full-screen reference frame for recording touch overlays (#765) | n/a | — | Daemon recording overlay; no Dart equivalent |
+| `462db525` | perf(ios): skip runner uptime preflight after recent healthy mutations (#763) | n/a | — | Daemon runner-session preflight; already ported via `dfd5c712` |
+| `3780ca6e` | perf(ios): fuse scroll frame resolution and drag into one runner command (#760) | ported | (ios-runner-sync-1) | Swift `scroll` runner command (fused frame+drag); daemon plumbing n/a |
+| `e6e2baf3` | perf(ios): add lifecycle-safe runner sequence command for hot press series (#764) | ported | (ios-runner-sync-1) | Swift `sequence` runner command; daemon/dispatch layer n/a |
+| `93f104aa` | fix: make Device Hub simulator launch opt-in (#766) | n/a | — | Device Hub |
+| `c3d50f7a` | docs: add agent PR readiness checklist (#769) | n/a | — | Docs |
+| `bef5cf32` | chore: lint raw child process imports (#770) | n/a | — | TS tooling |
+| `3a02e514` | refactor(ios): consolidate series batching onto sequence command (#768) | ported | (ios-runner-sync-1) | Swift wire changes synced (doubleTap sequence step, tapSeries/dragSeries kept for wire compat with annotation); daemon retirement of sender functions n/a |
+| `86941579` | perf(ios): anchor recording gesture clock from runner response stamps (#762) | ported | (ios-runner-sync-1) | `stampingCurrentUptimeMs` extension; `+CommandExecution`/`+CommandJournal`/`+Models`/`+Transport` updated; daemon record-trace anchoring n/a |
+| `f8704f46` | feat: add Apple xctrace perf profiling (#755) | n/a | — | Daemon perf profiling; Dart has own `perf_xml.dart` harness |
+| `a35c444d` | feat: add perf memory diagnostics (#759) | n/a | — | Daemon memory perf; out of scope |
+| `cba020de` | fix: add iOS private AX snapshot fallback (#758) | ported | (ios-runner-sync-1) | New `RunnerAXSnapshotBridge.h/.m` (ObjC private AX API bridge) + `RunnerTests+AXSnapshotFallback.swift` + bridging header updated |
+| `dfc5dba0` | refactor: split daemon client facade (#773) | n/a | — | Daemon client refactor |
+| `3f6363c9` | fix: route replay path commands correctly (#778) | n/a | — | Replay routing (daemon + Maestro) |
+| `3b94b364` | docs: add JPMorgan Chase to readme users (#782) | n/a | — | Docs |
+| `60e4fe01` | docs: narrow delay-ms text entry guidance (#781) | n/a | — | Docs |
+| `0425df2b` | refactor: bundle snapshot capture annotations (#777) | n/a | — | Daemon snapshot annotation refactor |
+| `385c1dd6` | fix(daemon): use snapshot quality for sparse handling (#779) | n/a | — | Daemon sparse snapshot handling |
+| `fa8cce37` | refactor(ios): snapshot capture plans with a structured quality verdict (#783) | ported | (ios-runner-sync-1) | New `RunnerTests+SnapshotCapturePlan.swift` (SnapshotQuality, SnapshotBackendKind, runSnapshotCapturePlan chain); major `+Snapshot` update; daemon snapshot pipeline n/a |
+| `931cbba1` | refactor(ios): share snapshot filter predicates (#780) | ported | (ios-runner-sync-1) | New `RunnerTests+FlatSnapshotFiltering.swift` (FlatSnapshotFilterNode/Decision); `+AXSnapshotFallback` and `+Snapshot` updated to share predicates |
+| `fa1c1d55` | refactor: localize command surface modules (#772) | n/a | — | Daemon command surface refactor |
+| `48c121d5` | feat: add debug symbols workflow (#756) | n/a | — | Debug symbols (out of scope) |
+| `f0d1674c` | feat: add Android native perf profiling (#757) | n/a | — | Android native perf; Dart port out of scope |
+| `c7c9db74` | refactor: split Android native perf collector (#788) | n/a | — | Android native perf collector |
+| `1da6fd51` | refactor: split debug symbols workflow modules (#787) | n/a | — | Debug symbols |
+| `c9255639` | fix: avoid focusing booted iOS simulators (#790) | n/a | — | Device Hub simulator focus |
+| `4142daa0` | docs: update internal agent guidance (#789) | n/a | — | Docs |
+| `5c83fe4e` | fix: improve daemon diagnostics and remove compact snapshots (#786) | ported | (ios-runner-sync-1) | Swift `compact` flag made no-op in `+Models`/`+AXSnapshotFallback`/`+CommandExecution`/`+FlatSnapshotFiltering`/`+Snapshot`; Dart port retains `compact` field for wire compat (no-op, default false); daemon diagnostics n/a |
+| `dd5c0be0` | fix: relax Android snapshot helper session timeout (#796) | n/a | — | Daemon persistent helper session |
+| `96534e86` | fix: stream replay suite progress (#795) | skipped | — | Replay progress streaming (out of scope) |
+| `4f0886d1` | fix: improve iOS runner crash diagnostics (#793) | ported | (0.18.0 gap) | New `runner_failure_diagnostics.dart`: `enrichRunnerFailureFromLog` reads the runner log tail (64 KB) and reclassifies AX-runtime/CoreText + target-app crashes to `IOS_TARGET_APP_CRASH` with an actionable hint + `runnerFailureReason`; wired into `ios_backend.dart` `_sendOrThrow`. New `AppErrorCodes.iosTargetAppCrash`. 4 unit tests. |
+| `8de4dddd` | fix: tighten ios runner crash classification (#797) | ported | (0.18.0 gap) | `runner_failure_diagnostics.dart`: tightened regexes for AX crash patterns; co-ported with `4f0886d1` |
+| `c4950a94` | fix: detect disabled Developer Tools mode for iOS runner (#792) | ported | (0.18.0 gap) | `runner_client.dart`: `_verifyDeveloperModeForIosRunner` runs `DevToolsSecurity -status` (allowFailure, 2s timeout) as a preflight in `launch()` before build/launch; when output matches "developer mode is currently disabled" throws `AppError(COMMAND_FAILED, "Developer mode is disabled for Apple development tools")` with a `sudo DevToolsSecurity -enable` hint + `devToolsSecurityStatus` detail. **Verified live on iOS sim** (runner correctly blocked with the hint). Dropped: the disposal-side `simctl terminate` of stale simulator runner apps (daemon-cleanup specific). |
+| `1ce2e971` | 0.17.3 | n/a | — | Version bump |
+| `945a780c` | fix: stabilize iOS runner gestures (#800) | ported | (ios-runner-sync-1) | `+AXSnapshotFallback`, `+CommandExecution`, `+Models`, `+SequenceExecution`, `+Snapshot` updated; dispatch/interactions.ts changes n/a |
+| `98376b93` | fix: report snapshot timing diagnostics (#798) | n/a | — | Daemon snapshot timing |
+| `0034a767` | fix: align Maestro test discovery order (#801) | skipped | — | Maestro (out of scope) |
+| `778349a9` | fix: stabilize Android Maestro replay reliability (#799) | skipped | — | Maestro (out of scope) |
+| `991f4c70` | fix: match Maestro directory test order (#802) | skipped | — | Maestro (out of scope) |
+| `71db11b7` | 0.17.4 | n/a | — | Version bump |
+| `93a69981` | fix: rotate synthesized iOS taps into native screen space (#804) | ported | (ios-runner-sync-1) | `RunnerSynthesizedGesture.h/.m`: `interfaceOrientationForApplication:` + rotation math; `+Interaction`: coordinate rotation for synthesized tap/transform |
+| `a6bb8653` | fix: stabilize Android Maestro replay interactions (#805) | skipped | — | Maestro (out of scope) |
+| `9e165114` | perf: optimize rslib startup build (#803) | n/a | — | TS build tooling |
+| `204be34d` | 0.17.5 | n/a | — | Version bump |
+| `0b499f22` | chore: update stale callstackincubator references | n/a | — | Docs/chore |
+| `350cd0c1` | feat(ios): support external xctest runner artifact (#806) | n/a | — | Daemon prebuilt runner artifact; Dart port builds own runner |
+| `feb5309e` | fix: classify external xctest runner flags (#810) | n/a | — | Daemon xctest runner flags |
+| `d14dfab4` | fix(ios): support no-op xctest runner startup (#807) | skipped | — | `NOOP_STARTUP` guard in `RunnerTests.swift`; Dart port keeps its own `RunnerTests.swift` (BSD socket server, `fastSnapshotLimit`, `maxSnapshotElements`); no-op path not needed in daemon-less port |
+| `d29b86d7` | fix: report maestro ios runner setup failures (#809) | skipped | — | Maestro (out of scope) |
+| `afd41302` | feat: improve maestro test reporter (#811) | skipped | — | Maestro (out of scope) |
+| `f9a9662f` | 0.17.6 | n/a | — | Version bump |
+| `188715b4` | feat: add web platform vocabulary (#824) | n/a | — | Web platform |
+| `833479e0` | feat: add semantic web provider seam (#825) | n/a | — | Web platform |
+| `73dc7f88` | feat(recording): align quality and max-size controls (#816) | ported | (ios-runner-sync-1) | `recording-overlay.swift`: `--quality medium|high` + `ExportQuality` enum; `recording-resize.swift`: `quality: Int` replaces `maxSize: Int`; daemon/CLI flags n/a; `RunnerTests+ScreenRecorder.swift` NOT synced (Dart uses `quality: Int?` not `maxSize:`, already a prior deviation) |
+| `87a6ac7c` | feat: bridge web provider to agent-browser (#826) | n/a | — | Web platform |
+| `bc5726e8` | test: cover web provider scenario (#827) | n/a | — | Web platform |
+| `cb28f686` | fix: align web snapshot and capability support (#828) | n/a | — | Web platform |
+| `47fadf69` | fix: clean daemon-owned ios runner leases (#829) | n/a | — | Daemon runner lease management |
+| `d3955d51` | chore: remove test-only dead exports (#836) | n/a | — | TS exports |
+| `3ac96d21` | fix: preserve web backend setup hint (#835) | n/a | — | Web platform |
+| `d05cfc72` | feat: manage web backend setup (#833) | n/a | — | Web platform |
+| `c6fd3dc9` | test: add live web platform smoke (#832) | n/a | — | Web platform |
+| `02481e8b` | docs: document minimal web support (#831) | n/a | — | Docs |
+| `f2dd620f` | docs: mention web in README tagline (#837) | n/a | — | Docs |
+| `467e174b` | test: improve SkillGym guidance coverage (#839) | n/a | — | skillgym |
+| `d7beb527` | feat: expose web network dump through agent-browser (#838) | n/a | — | Web platform |
+| `a8fb2a37` | docs: document multi-worktree Metro workflow (#841) | n/a | — | Docs |
+| `e6b40dc6` | docs: simplify CLI help flag scoping (#840) | n/a | — | Docs |
+| `b3b8c90f` | 0.17.7 | n/a | — | Version bump |
+| `bf8d952e` | fix: speed up web snapshots (#842) | n/a | — | Web platform |
+| `c2814842` | fix: use native web ref interactions (#843) | n/a | — | Web platform |
+| `19f73c8f` | ci: fix iOS simulator boot timeout (#845) | n/a | — | CI |
+| `d47cd301` | feat: add agent-device proxy command (#844) | n/a | — | Daemon proxy |
+| `51eaa7fd` | 0.17.8 | n/a | — | Version bump |
+| `180a74b6` | refactor: share daemon HTTP contract helpers (#846) | n/a | — | Daemon HTTP |
+| `2e02f767` | fix: validate batch steps through command contracts (#848) | n/a | — | Daemon batch validation |
+| `7739b71a` | refactor: centralize command family facets (#849) | n/a | — | Daemon command facets |
+| `0b840d95` | chore: add worktree include config (#853) | n/a | — | Dev tooling |
+| `091c7dbc` | refactor: deepen runner command traits (#847) | n/a | — | Daemon command traits refactor |
+| `5a84507b` | docs: add selector capture reliability contract (#858) | n/a | — | Docs |
+| `b2030289` | refactor: migrate command families to facets (#854) | n/a | — | Daemon facets |
+| `a179e1e0` | docs: add README articles and videos (#855) | n/a | — | Docs |
+| `8a348210` | test: guard Maestro swipe stabilization flag (#860) | skipped | — | Maestro (out of scope) |
+| `e97e2542` | refactor: unify selector capture runtime (#857) | n/a | — | Daemon selector capture |
+| `c9748a9a` | refactor: extract daemon selector capture runtime (#859) | n/a | — | Daemon internals |
+| `09339e12` | fix: honor scroll duration across platform plumbing (#866) | ported | (0.18.0 gap) | `scroll_gesture.dart`: `normalizeScrollDurationMs` validator (0–10000) + `scrollDurationMaxMs`. Threaded `durationMs` through `BackendScrollOptions` → runtime `scroll()` → CLI `--duration-ms` flag. iOS `ios_backend.dart` scroll: sends the synthesized `drag` (`synthesized:true` + `durationMs`) only when a duration is requested, else native drag (mirrors upstream fused `.scroll`). Android `scrollAndroid`: `durationMs` param → `input swipe` (default 300) + returned. `RunnerTests+CommandExecution.swift` `.scroll` durationMs wiring synced. **Verified live on Android** (default 300, honors 120, rejects >10000). 4 unit tests. daemon/client scroll-command refactor n/a. |
+| `ba825d8d` | fix: use desktop scroll events on macOS (#863) | ported | (ios-runner-sync-1) | Swift `desktopScroll` runner command (`desktopScrollAt`, `desktopScrollWheelDeltaEvents`); `+Models`/`+CommandExecution`/`+Interaction`/`+CommandJournal`/`+ScrollGesture` updated; macOS daemon plumbing n/a |
+| `5be101c2` | fix: clean up Android snapshot helper sessions (#862) | n/a | — | Daemon persistent helper session management; Dart port runs helper APK per-command |
+| `d8e6bb7a` | fix: add web viewport control and screenshot aliases (#865) | n/a | — | Web platform |
+| `63e68cd5` | 0.17.9 | n/a | — | Version bump |
+| `ced61ce3` | fix: disable nested sandboxing for ios runner builds (#869) | n/a | — | iOS runner build script; Dart port uses `make build-ios-runner` which has no nested sandbox issue |
+| `f253d50a` | fix: resolve web find locators (#870) | n/a | — | Web platform |
+| `fa1b0b7c` | docs: configure agent skill conventions (#871) | n/a | — | Docs |
+| `19417f0a` | fix: avoid copying pnpm node_modules into worktrees (#872) | n/a | — | Dev tooling |
+| `c142514c` | docs: clarify agent-device QA mental model (#875) | n/a | — | Docs |
+| `56d8e390` | test: migrate Android recording sizing coverage (#876) | n/a | — | TS test coverage |
+| `24cb2b62` | fix: refine Apple provider pressure reporting (#877) | n/a | — | Daemon runner pressure reporting |
+| `98c0b1d3` | test: migrate test app to expo dev client (#881) | n/a | — | RN test app |
+| `8c49d54f` | fix: clarify proxy runner ownership (#882) | n/a | — | Daemon proxy |
+| `be1e1c99` | feat: add cdp command agent-cdp passthrough (#873) | n/a | — | CDP/agent-cdp |
+| `053bbace` | 0.17.10 | n/a | — | Version bump |
+| `8c2b1ade` | feat: support agent-cdp remote bridge sessions (#878) | n/a | — | CDP |
+| `c16a8d5e` | docs: clarify agent-device help entrypoint (#884) | n/a | — | Docs |
+| `2d6fc982` | refactor: tighten daemon output helpers (#892) | n/a | — | Daemon output |
+| `a9069692` | refactor: model recording backends (#893) | n/a | — | Daemon recording backends |
+| `8f92572a` | feat: expose web screen recording (#891) | n/a | — | Web platform |
+| `a8223253` | feat: add integrated device leasing (#890) | n/a | — | Daemon device leasing |
+| `78ca8fb9` | 0.18.0 | n/a | — | Version bump |
+| `93d5275e` | refactor: type-safe recording backends + exhaustive capability gating (#894) | n/a | — | Daemon recording backends |
+| `5a676235` | perf: reduce Apple runner build overhead (#898) | ported | (ios-runner-sync-1) | `+Interaction.swift`: `#if os(iOS)` / `#else` guard for `pressKeyboardReturn` non-iOS path; `AgentDeviceRunnerApp.m` not ported (Dart keeps `.swift` host app); `project.pbxproj` not modified (PBXFileSystemSynchronizedRootGroup auto-sync); build scripts n/a |
+| `d16f01cb` | refactor: derive platform allow-lists from canonical device tuples (#895) | n/a | — | TS type refactor |
+| `22a9b2fe` | feat: add AppleOS discriminant to the device model (#896) | n/a | — | TS device model; Dart has own device model |
+| `cd00ff86` | refactor: validate JSON-RPC at the MCP/HTTP boundary (#897) | n/a | — | MCP/daemon |
+| `fc81c9ed` | refactor: derive replay metadata platforms from canonical selectors (#899) | n/a | — | Daemon replay |
+| `9b79e210` | refactor: remove shallow re-export modules and a dead branch (#901) | n/a | — | TS exports |
+| `fbec5cf6` | refactor: collapse duplicated batch-step validation to one schema (#902) | n/a | — | Daemon batch |
+| `d291e4c5` | refactor: extract shared Android instrumentation-helper (#903) | n/a | — | Daemon Android helper |
+| `91d1b4c1` | refactor: dedup daemon handler capability/session/recordAction boilerplate (#904) | n/a | — | Daemon handlers |
+| `29e19b8e` | docs: add ADR 0008 (command descriptor) + ADR 0009 (Apple consolidation) (#905) | n/a | — | Docs |
+| `4648051b` | feat: command-descriptor registry (additive, parity-tested) — Phase 1 step 1 (#906) | n/a | — | Daemon command descriptor registry; no Dart equivalent |

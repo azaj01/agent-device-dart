@@ -244,6 +244,42 @@ class IosRunnerClient {
     return matching;
   }
 
+  /// Fail fast when Developer Mode for Apple development tools is disabled.
+  /// `DevToolsSecurity -status` prints "Developer mode is currently disabled"
+  /// in that state; UI test runners then never attach. Best-effort: any
+  /// probe failure (tool missing, timeout) is ignored so we don't block
+  /// launch on machines where the check itself can't run.
+  static Future<void> _verifyDeveloperModeForIosRunner() async {
+    RunCmdResult result;
+    try {
+      result = await runCmd(
+        'DevToolsSecurity',
+        ['-status'],
+        const ExecOptions(allowFailure: true, timeoutMs: 2000),
+      );
+    } catch (_) {
+      return;
+    }
+    final output = '${result.stdout}\n${result.stderr}';
+    if (!RegExp(
+      'developer mode is currently disabled',
+      caseSensitive: false,
+    ).hasMatch(output)) {
+      return;
+    }
+    throw AppError(
+      AppErrorCodes.commandFailed,
+      'Developer mode is disabled for Apple development tools',
+      details: {
+        'hint':
+            'Run `sudo DevToolsSecurity -enable`, then retry the iOS runner. '
+            'UI test runners start suspended until Xcode/testmanagerd can '
+            'attach.',
+        'devToolsSecurityStatus': output.trim(),
+      },
+    );
+  }
+
   /// Try [findXctestrun]; if the products dir doesn't exist, auto-build
   /// the runner via `xcodebuild build-for-testing` then retry. Device
   /// builds require a provisioning profile and are NOT auto-built — they
@@ -439,6 +475,11 @@ class IosRunnerClient {
     startupTimeout ??= kind == IosRunnerKind.device
         ? const Duration(seconds: 180)
         : const Duration(seconds: 120);
+    // UI test runners launch suspended until Xcode/testmanagerd can attach;
+    // when Developer Mode for Apple development tools is disabled the runner
+    // never comes up, surfacing only as an opaque startup timeout. Detect it
+    // up front and emit an actionable hint. Port of c4950a94.
+    await _verifyDeveloperModeForIosRunner();
     final initialProductsDir = resolveBuildProductsDir(
       override: buildProductsDirOverride,
       kind: kind,

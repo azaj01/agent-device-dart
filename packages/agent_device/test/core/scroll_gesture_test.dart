@@ -155,4 +155,46 @@ void main() {
       );
     });
   });
+
+  group('normalizeScrollDurationMs', () {
+    test('returns null when no duration requested', () {
+      expect(normalizeScrollDurationMs(null), isNull);
+    });
+
+    test('passes through valid durations including 0 and the max', () {
+      expect(normalizeScrollDurationMs(0), 0);
+      expect(normalizeScrollDurationMs(120), 120);
+      expect(normalizeScrollDurationMs(scrollDurationMaxMs), scrollDurationMaxMs);
+    });
+
+    test('rejects negative durations', () {
+      expect(
+        () => normalizeScrollDurationMs(-1),
+        throwsA(
+          isA<AppError>()
+              .having((e) => e.code, 'code', AppErrorCodes.invalidArgs)
+              .having(
+                (e) => e.message,
+                'message',
+                contains('non-negative integer'),
+              ),
+        ),
+      );
+    });
+
+    test('rejects durations above the max', () {
+      expect(
+        () => normalizeScrollDurationMs(scrollDurationMaxMs + 1),
+        throwsA(
+          isA<AppError>()
+              .having((e) => e.code, 'code', AppErrorCodes.invalidArgs)
+              .having(
+                (e) => e.message,
+                'message',
+                contains('at most $scrollDurationMaxMs'),
+              ),
+        ),
+      );
+    });
+  });
 }

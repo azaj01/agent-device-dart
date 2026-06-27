@@ -48,6 +48,44 @@ void main() {
       expect(chain.selectors[0].terms[0].value, true);
     });
 
+    test('handles quoted values ending in escaped backslashes', () {
+      final chain = parseSelectorChain(r'label="path\\" || id=auth_continue');
+      expect(chain.selectors, hasLength(2));
+      expect(chain.selectors[0].terms[0].value, r'path\');
+    });
+
+    test('decodes escaped selector string values', () {
+      // Non-raw strings with doubled backslashes so the parser receives the
+      // literal escape sequences (e.g. \n, 1) to decode.
+      final chain = parseSelectorChain(
+        [
+          'label="Switch\\nMy Community"',
+          'value="A\\tB\\rC\\bD\\fE\\/F"',
+          'id="item_\\u0031\\uD83D\\uDE00"',
+          "text='It\\'s OK'",
+        ].join(' '),
+      );
+
+      expect(chain.selectors[0].terms[0].value, 'Switch\nMy Community');
+      expect(chain.selectors[0].terms[1].value, 'A\tB\rC\bD\fE/F');
+      expect(
+        chain.selectors[0].terms[2].value,
+        'item_1${String.fromCharCode(0x1f600)}',
+      );
+      expect(chain.selectors[0].terms[3].value, "It's OK");
+    });
+
+    test('preserves malformed and unknown selector string escapes', () {
+      final chain = parseSelectorChain(r'label="bad\u12" value="keep\q"');
+      expect(chain.selectors[0].terms[0].value, r'bad\u12');
+      expect(chain.selectors[0].terms[1].value, r'keep\q');
+    });
+
+    test('preserves literal escaped control sequences when double escaped', () {
+      final chain = parseSelectorChain(r'label="foo\\nbar"');
+      expect(chain.selectors[0].terms[0].value, r'foo\nbar');
+    });
+
     test('throws on empty expression', () {
       expect(
         () => parseSelectorChain(''),

@@ -28,6 +28,7 @@ import 'install_artifact.dart';
 import 'perf.dart';
 import 'perf_frame.dart';
 import 'runner_client.dart';
+import 'runner_failure_diagnostics.dart';
 import 'screenshot.dart';
 import 'simctl.dart';
 
@@ -393,6 +394,10 @@ class IosBackend extends Backend {
         x1 = centerX - travel / 2;
         x2 = centerX + travel / 2;
     }
+    // Honor a caller-provided duration via the synthesized drag path; without
+    // one, fall through to the native (non-synthesized) drag. Mirrors upstream
+    // fused `.scroll` (durationMs: command.durationMs, synthesized: != nil).
+    final durationMs = options.durationMs;
     await _sendOrThrow(session, {
       'command': 'drag',
       'x': x1,
@@ -400,7 +405,10 @@ class IosBackend extends Backend {
       'x2': x2,
       'y2': y2,
       'appBundleId': ?bundleId,
-      'durationMs': 250,
+      if (durationMs != null) ...{
+        'durationMs': durationMs,
+        'synthesized': true,
+      },
     });
     return null;
   }
@@ -1798,11 +1806,14 @@ Future<void> _sendOrThrow(
 ) async {
   final res = await IosRunnerClient.send(session, body);
   if (!res.ok) {
-    throw AppError(
-      AppErrorCodes.commandFailed,
-      'iOS runner ${body['command']} failed: '
-      '${res.errorMessage ?? 'unknown error'}',
-      details: {'command': body['command']},
+    throw await enrichRunnerFailureFromLog(
+      error: AppError(
+        AppErrorCodes.commandFailed,
+        'iOS runner ${body['command']} failed: '
+        '${res.errorMessage ?? 'unknown error'}',
+        details: {'command': body['command'], 'logPath': session.logPath},
+      ),
+      logPath: session.logPath,
     );
   }
 }
