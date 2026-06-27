@@ -57,6 +57,32 @@ bool shouldPreflightMutatingRunnerCommand(
       runnerTapPreflightSkipFreshness;
 }
 
+/// Ambient overrides for using an externally-built (e.g. CI-signed) iOS
+/// XCTest runner artifact instead of building one. Set from the CLI flags
+/// `--ios-xctestrun-file` / `--ios-xctest-derived-data-path` /
+/// `--ios-xctest-env-dir` (port of upstream #806, additive). When
+/// [xctestrunFile] is set, [IosRunnerClient.launch] uses it directly and
+/// skips the build/cache path entirely — the artifact is trusted as-is, which
+/// is what lets a pre-signed device runner be reused without re-signing.
+class IosRunnerLaunchOverrides {
+  /// Path to an externally built `.xctestrun` artifact. When set, skip build.
+  static String? xctestrunFile;
+
+  /// Build products / derived-data products dir the artifact resolves
+  /// `__TESTROOT__` against. Defaults to the `.xctestrun`'s parent directory.
+  static String? derivedDataPath;
+
+  /// Writable scratch dir for the env-injected `.xctestrun` copy. Useful when
+  /// the artifact lives in a read-only location (CI). Defaults to a temp dir.
+  static String? envDir;
+
+  /// True when an external prebuilt artifact has been configured.
+  static bool get hasExternalArtifact =>
+      (xctestrunFile ?? '').trim().isNotEmpty;
+
+  const IosRunnerLaunchOverrides._();
+}
+
 /// JSON envelope returned by the runner: `{ok: bool, data|error: ...}`.
 class RunnerResponse {
   final bool ok;
@@ -418,8 +444,14 @@ class IosRunnerClient {
     required File template,
     required String productsDir,
     required Map<String, String> envVars,
+    String? outputDir,
   }) async {
-    final tmpDir = await Directory.systemTemp.createTemp('ad-ios-runner-');
+    final Directory tmpDir;
+    if (outputDir != null && outputDir.trim().isNotEmpty) {
+      tmpDir = await Directory(outputDir.trim()).create(recursive: true);
+    } else {
+      tmpDir = await Directory.systemTemp.createTemp('ad-ios-runner-');
+    }
     final out = File(p.join(tmpDir.path, 'runner.xctestrun'));
     await out.writeAsBytes(await template.readAsBytes());
 
@@ -480,17 +512,45 @@ class IosRunnerClient {
     // never comes up, surfacing only as an opaque startup timeout. Detect it
     // up front and emit an actionable hint. Port of c4950a94.
     await _verifyDeveloperModeForIosRunner();
-    final initialProductsDir = resolveBuildProductsDir(
-      override: buildProductsDirOverride,
-      kind: kind,
-    );
-    final ensured = await _ensureXctestrun(initialProductsDir, kind: kind);
-    final productsDir = ensured.productsDir;
+    // External prebuilt artifact (CI-signed runner): use the supplied
+    // .xctestrun directly and skip the build/cache path entirely.
+    final File template;
+    final String productsDir;
+    if (IosRunnerLaunchOverrides.hasExternalArtifact) {
+      final file = File(IosRunnerLaunchOverrides.xctestrunFile!.trim());
+      if (!file.existsSync()) {
+        throw AppError(
+          AppErrorCodes.invalidArgs,
+          'iOS xctestrun artifact not found: ${file.path}',
+          details: {
+            'hint': 'Pass --ios-xctestrun-file pointing at a built '
+                '.xctestrun (e.g. <derivedData>/Build/Products/*.xctestrun).',
+          },
+        );
+      }
+      template = file;
+      productsDir = (IosRunnerLaunchOverrides.derivedDataPath ?? '').trim().isNotEmpty
+          ? IosRunnerLaunchOverrides.derivedDataPath!.trim()
+          : p.dirname(file.path);
+      logger.trace('[runner] using external xctestrun=${file.path}  '
+          'products=$productsDir');
+    } else {
+      final initialProductsDir = resolveBuildProductsDir(
+        override: buildProductsDirOverride,
+        kind: kind,
+      );
+      final ensured = await _ensureXctestrun(initialProductsDir, kind: kind);
+      template = ensured.template;
+      productsDir = ensured.productsDir;
+    }
     final port = await pickFreePort();
     final xctestrunPath = await prepareXctestrunWithEnv(
-      template: ensured.template,
+      template: template,
       productsDir: productsDir,
       envVars: {'AGENT_DEVICE_RUNNER_PORT': '$port'},
+      outputDir: (IosRunnerLaunchOverrides.envDir ?? '').trim().isEmpty
+          ? null
+          : IosRunnerLaunchOverrides.envDir!.trim(),
     );
 
     final logDir = await Directory.systemTemp.createTemp('ad-ios-runner-log-');

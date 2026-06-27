@@ -34,10 +34,30 @@ See the [package README](./packages/agent_device/README.md) for install instruct
 
 ## Porting status
 
-The port covers Phases 0–8 and 10 of the upstream feature set. Remaining:
+The port covers Phases 0–8 and 10 of the upstream feature set, and tracks
+upstream behavior through **0.18.0** (commit `4648051b`). Remaining:
 
 - **Phase 9** — macOS and Linux desktop platform backends
 - **Phase 11** — React Native metro integration (may become Flutter-specific)
 - Daemon mode (Phase 6B) — deferred; direct execution covers all current use cases
+- Web / `agent-browser` / `agent-cdp` — out of scope (mobile-only port)
+- Maestro compatibility layer — out of scope
 
 For the full porting history and design decisions, see [`PORTING_PLAN.md`](./PORTING_PLAN.md).
+Per-upstream-commit disposition is tracked in [`PORTED_COMMITS.md`](./PORTED_COMMITS.md);
+the 0.16.10 → 0.18.0 gap analysis is in [`PORT_GAP_0.16.10_to_0.18.0.md`](./PORT_GAP_0.16.10_to_0.18.0.md).
+
+### Using a prebuilt (CI-signed) iOS runner
+
+To skip building the XCUITest runner — e.g. in CI with a pre-signed artifact —
+pass an externally built `.xctestrun`:
+
+```
+agent-device snapshot \
+  --ios-xctestrun-file /path/to/Build/Products/AgentDeviceRunner_*.xctestrun \
+  --ios-xctest-derived-data-path /path/to/Build/Products \
+  --ios-xctest-env-dir "$RUNNER_TEMP/ad-xctest"   # writable scratch for read-only artifacts
+```
+
+The artifact is trusted as-is (no rebuild / re-sign). The legacy
+`AGENT_DEVICE_IOS_RUNNER_BUILD_DIR` env override remains supported.
