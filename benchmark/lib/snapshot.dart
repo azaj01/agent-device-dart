@@ -31,17 +31,30 @@ Set<String> identifiersOf(Map<String, dynamic>? envelope) => {
         if (n['identifier'] is String) n['identifier'] as String,
     };
 
-/// The device viewport bounds, taken from the root (Application/Window) node's
-/// rect. Used to decide whether an element is actually on-screen and tappable.
+/// The device viewport bounds. Derived from the largest node extent in the
+/// snapshot rather than `nodes.first`: the two CLIs order the tree differently
+/// (npm emits the full-window root first; the Dart port may emit a smaller
+/// foreground container first), so the first node's rect is not a reliable
+/// screen-size proxy. The maximum right/bottom edge across all nodes is, and
+/// is identical in shape across both CLIs.
 ({double w, double h})? screenBounds(Map<String, dynamic>? envelope) {
-  final nodes = nodesOf(envelope);
-  if (nodes.isEmpty) return null;
-  final r = nodes.first['rect'];
-  if (r is! Map) return null;
-  final w = r['width'] as num?;
-  final h = r['height'] as num?;
-  if (w == null || h == null || w <= 0 || h <= 0) return null;
-  return (w: w.toDouble(), h: h.toDouble());
+  var w = 0.0;
+  var h = 0.0;
+  for (final n in nodesOf(envelope)) {
+    final r = n['rect'];
+    if (r is! Map) continue;
+    final x = r['x'] as num?;
+    final y = r['y'] as num?;
+    final rw = r['width'] as num?;
+    final rh = r['height'] as num?;
+    if (x == null || y == null || rw == null || rh == null) continue;
+    final right = x.toDouble() + rw.toDouble();
+    final bottom = y.toDouble() + rh.toDouble();
+    if (right > w) w = right;
+    if (bottom > h) h = bottom;
+  }
+  if (w <= 0 || h <= 0) return null;
+  return (w: w, h: h);
 }
 
 /// Centre point of the node identified by [id], or null if absent, rect-less,
