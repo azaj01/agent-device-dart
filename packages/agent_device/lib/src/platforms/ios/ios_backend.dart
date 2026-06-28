@@ -1338,7 +1338,9 @@ class IosBackend extends Backend {
       if (options.normalizedPosition != null)
         'normalizedPosition': options.normalizedPosition,
       'action': options.action,
-      'steps': options.steps,
+      // Runner field is `sliderSteps` (Int): renamed from `steps` so it doesn't
+      // collide with the sequence command's `steps: [SequenceStep]` array.
+      'sliderSteps': options.steps,
       if (options.elementRect != null) 'rectX': options.elementRect!.x,
       if (options.elementRect != null) 'rectY': options.elementRect!.y,
       if (options.elementRect != null) 'rectW': options.elementRect!.width,

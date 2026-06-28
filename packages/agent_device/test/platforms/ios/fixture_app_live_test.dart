@@ -61,6 +61,11 @@ void main() {
       await expectVisibleId(device, FixtureIds.homeOpenFormLabButton);
       await expectVisibleId(device, FixtureIds.homeOpenCatalogButton);
       await expectVisibleId(device, FixtureIds.homeOpenStateLabButton);
+      // As of upstream 0.18.0 the iOS snapshot no longer reports off-screen
+      // (zero-rect) nodes, so the Diagnostics card — below the fold on the
+      // iOS viewport — must be scrolled into view before it appears in a
+      // snapshot. (Android fits all cards above the fold.)
+      await swipeUp(device);
       await expectVisibleId(device, FixtureIds.homeOpenDiagnosticsButton);
     },
     timeout: const Timeout(Duration(seconds: 60)),
