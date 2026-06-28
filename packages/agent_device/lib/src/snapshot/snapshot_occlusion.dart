@@ -65,13 +65,18 @@ List<RawSnapshotNode> annotateCoveredSnapshotNodes(
   final byIndex = <int, RawSnapshotNode>{
     for (final node in annotated) node.index: node,
   };
+  // Memo of "is the node at list position covered by a later overlay?".
+  // Annotating a node only flips hittable/interactionBlocked/hints — never the
+  // rect/type the covering geometry reads — so coverage is stable across the
+  // pass and safe to cache. Collapses the otherwise-O(n^3) nested search
+  // (each candidate re-checks whether its cover is itself covered) to ~O(n^2).
+  final coveredMemo = <int, bool>{};
 
   var changed = false;
   for (var position = 0; position < annotated.length; position++) {
     final node = annotated[position];
     if (!_isCandidateTouchNode(node)) continue;
-    final cover = _findCoveringNode(annotated, byIndex, position, node);
-    if (cover == null) continue;
+    if (!_isNodeCovered(annotated, byIndex, position, coveredMemo)) continue;
 
     changed = true;
     final coveredNode = _cloneAsCovered(node);
@@ -94,14 +99,30 @@ bool isSnapshotNodeInteractionBlocked(
 // Covering-node search
 // ---------------------------------------------------------------------------
 
-RawSnapshotNode? _findCoveringNode(
+/// Whether the node at [targetPosition] has its center covered by a later
+/// overlay-like sibling. Memoized in [coveredMemo] (keyed by list position).
+bool _isNodeCovered(
   List<RawSnapshotNode> nodes,
   Map<int, RawSnapshotNode> byIndex,
   int targetPosition,
-  RawSnapshotNode target,
+  Map<int, bool> coveredMemo,
 ) {
+  final cached = coveredMemo[targetPosition];
+  if (cached != null) return cached;
+  final result = _computeNodeCovered(nodes, byIndex, targetPosition, coveredMemo);
+  coveredMemo[targetPosition] = result;
+  return result;
+}
+
+bool _computeNodeCovered(
+  List<RawSnapshotNode> nodes,
+  Map<int, RawSnapshotNode> byIndex,
+  int targetPosition,
+  Map<int, bool> coveredMemo,
+) {
+  final target = nodes[targetPosition];
   final targetRect = _positiveRect(target.rect);
-  if (targetRect == null) return null;
+  if (targetRect == null) return false;
   final center = centerOfRect(targetRect);
 
   for (
@@ -109,12 +130,19 @@ RawSnapshotNode? _findCoveringNode(
     position < nodes.length;
     position++
   ) {
-    final candidate = nodes[position];
-    if (_canCoverPoint(nodes, byIndex, position, target, targetRect, center)) {
-      return candidate;
+    if (_canCoverPoint(
+      nodes,
+      byIndex,
+      position,
+      target,
+      targetRect,
+      center,
+      coveredMemo,
+    )) {
+      return true;
     }
   }
-  return null;
+  return false;
 }
 
 bool _canCoverPoint(
@@ -124,9 +152,16 @@ bool _canCoverPoint(
   RawSnapshotNode target,
   Rect targetRect,
   Point center,
+  Map<int, bool> coveredMemo,
 ) {
-  final coverRect =
-      _visibleCoverRect(nodes, byIndex, candidatePosition, target, targetRect);
+  final coverRect = _visibleCoverRect(
+    nodes,
+    byIndex,
+    candidatePosition,
+    target,
+    targetRect,
+    coveredMemo,
+  );
   return coverRect != null && _containsPoint(coverRect, center.x, center.y);
 }
 
@@ -136,6 +171,7 @@ Rect? _visibleCoverRect(
   int candidatePosition,
   RawSnapshotNode target,
   Rect targetRect,
+  Map<int, bool> coveredMemo,
 ) {
   final candidate = nodes[candidatePosition];
   if (!_isOverlayLikeNode(candidate)) return null;
@@ -144,7 +180,7 @@ Rect? _visibleCoverRect(
   if (candidateRect == null) return null;
   if (areRectsApproximatelyEqual(targetRect, candidateRect)) return null;
   // The candidate itself must not be covered by something above it.
-  if (_findCoveringNode(nodes, byIndex, candidatePosition, candidate) != null) {
+  if (_isNodeCovered(nodes, byIndex, candidatePosition, coveredMemo)) {
     return null;
   }
   return candidateRect;

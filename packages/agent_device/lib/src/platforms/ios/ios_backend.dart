@@ -15,6 +15,8 @@ import 'package:agent_device/src/platforms/setting_state.dart';
 import 'package:agent_device/src/runtime/paths.dart';
 import 'package:agent_device/src/snapshot/ios_presentation.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
+import 'package:agent_device/src/snapshot/snapshot_occlusion.dart'
+    show annotateCoveredSnapshotNodes;
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
 import 'package:agent_device/src/utils/file_mutex.dart';
@@ -219,7 +221,12 @@ class IosBackend extends Backend {
     final presentedNodes = _shouldPresentIosInteractiveSnapshot(options)
         ? presentIosInteractiveSnapshot(parsedNodes)
         : parsedNodes;
-    final snapshotNodes = attachRefs(presentedNodes);
+    // Annotate nodes covered by a floating overlay so interaction targeting
+    // can refuse to tap them (skipped for raw snapshots). Port of #708.
+    final annotatedNodes = options?.raw == true
+        ? presentedNodes
+        : annotateCoveredSnapshotNodes(presentedNodes);
+    final snapshotNodes = attachRefs(annotatedNodes);
     return BackendSnapshotResult(
       nodes: snapshotNodes,
       truncated: data['truncated'] == true,

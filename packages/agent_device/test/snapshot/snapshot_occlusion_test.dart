@@ -322,4 +322,51 @@ void main() {
       expect(resolution.node.ref, isNot(equals('e2')));
     });
   });
+
+  // Guards the full pipeline contract the backends rely on: annotation must
+  // survive attachRefs, and interaction targeting must then report 'covered'.
+  // (Regression guard for the annotateCoveredSnapshotNodes wiring in the iOS
+  // and Android snapshot backends.)
+  group('annotate → attachRefs → interaction targeting', () {
+    test('a covered node resolves with the covered reason end-to-end', () {
+      final nodes = _makeNodes([
+        {
+          'index': 0,
+          'depth': 0,
+          'type': 'Application',
+          'label': 'Example',
+          'rect': {'x': 0, 'y': 0, 'width': 390, 'height': 844},
+        },
+        {
+          'index': 1,
+          'depth': 1,
+          'parentIndex': 0,
+          'type': 'Button',
+          'label': 'Save draft',
+          'rect': {'x': 16, 'y': 790, 'width': 140, 'height': 44},
+          'hittable': true,
+        },
+        {
+          'index': 2,
+          'depth': 1,
+          'parentIndex': 0,
+          'type': 'TabBar',
+          'rect': {'x': 0, 'y': 760, 'width': 390, 'height': 84},
+          'hittable': true,
+        },
+      ]);
+
+      final snapshotNodes = attachRefs(annotateCoveredSnapshotNodes(nodes));
+      final button = snapshotNodes.firstWhere((n) => n.label == 'Save draft');
+
+      // attachRefs must carry interactionBlocked through to the SnapshotNode.
+      expect(button.interactionBlocked, equals('covered'));
+
+      final resolution = resolveActionableTouchResolution(snapshotNodes, button);
+      expect(
+        resolution.reason,
+        ActionableTouchResolutionReason.covered,
+      );
+    });
+  });
 }

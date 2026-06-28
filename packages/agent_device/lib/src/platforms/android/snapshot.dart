@@ -3,6 +3,8 @@
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../../snapshot/snapshot.dart';
+import '../../snapshot/snapshot_occlusion.dart'
+    show annotateCoveredSnapshotNodes;
 import '../../utils/diagnostics.dart'
     show DiagnosticLevel, EmitDiagnosticOptions, emitDiagnostic;
 import '../../utils/errors.dart' show AppError, AppErrorCodes;
@@ -144,8 +146,14 @@ snapshotAndroid(
     }
   }
 
+  // Annotate nodes covered by a floating overlay so interaction targeting can
+  // refuse to tap them (skipped for raw snapshots). Port of #708.
+  final resultNodes = snapshotOptions.raw == true
+      ? interactiveSnapshot.nodes
+      : annotateCoveredSnapshotNodes(interactiveSnapshot.nodes);
+
   return (
-    nodes: interactiveSnapshot.nodes,
+    nodes: resultNodes,
     truncated: interactiveSnapshot.truncated,
     analysis: interactiveSnapshot.analysis,
     androidSnapshot: capture.metadata,
