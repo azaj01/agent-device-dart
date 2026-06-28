@@ -427,8 +427,15 @@ Future<void> swipeUp(
   num endX = 200,
   num endY = 220,
   int durationMs = 250,
+  Duration settle = const Duration(milliseconds: 1600),
 }) async {
   await device.swipe(startX, startY, endX, endY, durationMs: durationMs);
+  // Let the scroll momentum settle before the next interaction. Tapping a
+  // node mid-fling lands on a stale/moving frame and the tap silently no-ops
+  // (e.g. a card tap that doesn't navigate).
+  if (settle > Duration.zero) {
+    await Future<void>.delayed(settle);
+  }
 }
 
 Future<void> fillTextField(
