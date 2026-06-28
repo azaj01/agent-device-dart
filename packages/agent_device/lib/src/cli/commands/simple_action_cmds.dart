@@ -10,6 +10,8 @@ import 'dart:io';
 
 import 'package:agent_device/src/backend/backend.dart';
 import 'package:agent_device/src/backend/device_info.dart';
+import 'package:agent_device/src/core/scroll_gesture.dart'
+    show scrollDurationMaxMs;
 import 'package:agent_device/src/runtime/interaction_target.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart' show Point;
 import 'package:agent_device/src/utils/errors.dart';
@@ -17,6 +19,17 @@ import 'package:agent_device/src/utils/errors.dart';
 import '../base_command.dart';
 
 class OpenCommand extends AgentDeviceCommand {
+  OpenCommand() {
+    argParser.addMultiOption(
+      'launch-args',
+      help:
+          'Arguments forwarded verbatim to the app launch. iOS: appended after '
+          'the bundle id on simctl/devicectl launch. Android: appended to '
+          '`am start`, e.g. --launch-args=--es --launch-args=key '
+          '--launch-args=value for typed Intent extras.',
+    );
+  }
+
   @override
   String get name => 'open';
 
@@ -30,8 +43,14 @@ class OpenCommand extends AgentDeviceCommand {
       throw AppError(AppErrorCodes.invalidArgs, 'open requires a target app.');
     }
     final target = args.first;
+    final launchArgs = argResults?['launch-args'] as List<String>?;
     final device = await openAgentDevice();
-    await device.openApp(target);
+    await device.openApp(
+      target,
+      options: (launchArgs != null && launchArgs.isNotEmpty)
+          ? BackendOpenOptions(launchArgs: launchArgs)
+          : null,
+    );
     emitResult({
       'opened': target,
       'deviceSerial': device.device.id,
@@ -327,7 +346,11 @@ class ScrollCommand extends AgentDeviceCommand {
   ScrollCommand() {
     argParser
       ..addOption('amount', help: 'Scroll amount (viewport multiples).')
-      ..addOption('pixels', help: 'Scroll by an exact pixel count.');
+      ..addOption('pixels', help: 'Scroll by an exact pixel count.')
+      ..addOption(
+        'duration-ms',
+        help: 'Scroll gesture duration in ms (0-$scrollDurationMaxMs).',
+      );
   }
 
   @override
@@ -348,11 +371,13 @@ class ScrollCommand extends AgentDeviceCommand {
     final direction = args.first;
     final amountRaw = argResults?['amount'] as String?;
     final pixelsRaw = argResults?['pixels'] as String?;
+    final durationRaw = argResults?['duration-ms'] as String?;
     final device = await openAgentDevice();
     final result = await device.scroll(
       direction,
       amount: amountRaw == null ? null : int.tryParse(amountRaw),
       pixels: pixelsRaw == null ? null : int.tryParse(pixelsRaw),
+      durationMs: durationRaw == null ? null : int.tryParse(durationRaw),
     );
     emitResult({
       'direction': direction,

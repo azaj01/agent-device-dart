@@ -69,6 +69,57 @@ void main() {
       expect(tree.children[0].children[0].label, 'Click me');
     });
 
+    test('parseBounds parses negative coordinates', () {
+      final rect = parseBounds('[-50,-10][100,200]');
+      expect(rect, isNotNull);
+      expect(rect!.x, -50);
+      expect(rect.y, -10);
+      expect(rect.width, 150);
+      expect(rect.height, 210);
+    });
+
+    test('readNodeAttributes extracts visible-to-user and drawing-order', () {
+      final attrs = readNodeAttributes(
+        '<node class="View" visible-to-user="false" drawing-order="3" />',
+      );
+      expect(attrs.visibleToUser, false);
+      expect(attrs.drawingOrder, 3);
+    });
+
+    test('parseUiHierarchyTree prunes visible-to-user="false" subtrees', () {
+      final xml = '''
+        <hierarchy>
+          <node class="FrameLayout" bounds="[0,0][1080,1920]">
+            <node class="View" text="Shown" bounds="[0,0][100,100]" visible-to-user="true" />
+            <node class="View" text="Gone" bounds="[0,0][100,100]" visible-to-user="false" />
+          </node>
+        </hierarchy>
+      ''';
+      final frame = parseUiHierarchyTree(xml).children[0];
+      expect(frame.children, hasLength(1));
+      expect(frame.children[0].label, 'Shown');
+    });
+
+    test('parseUiHierarchyTree drops a sibling covered by a higher '
+        'drawing-order sibling', () {
+      final xml = '''
+        <hierarchy>
+          <node class="FrameLayout" bounds="[0,0][1000,1000]">
+            <node class="View" resource-id="bg" bounds="[0,0][1000,1000]" drawing-order="0" visible-to-user="true">
+              <node class="Button" text="Background" bounds="[0,0][1000,1000]" clickable="true" drawing-order="0" visible-to-user="true" />
+            </node>
+            <node class="View" resource-id="fg" bounds="[0,0][1000,1000]" drawing-order="1" visible-to-user="true">
+              <node class="Button" text="Foreground" bounds="[0,0][1000,1000]" clickable="true" drawing-order="1" visible-to-user="true" />
+            </node>
+          </node>
+        </hierarchy>
+      ''';
+      final frame = parseUiHierarchyTree(xml).children[0];
+      // Background sibling (lower drawing order, fully covered) is removed.
+      expect(frame.children, hasLength(1));
+      expect(frame.children[0].identifier, 'fg');
+    });
+
     test('parseUiHierarchyTree handles self-closing nodes', () {
       final xml = '''
         <hierarchy>
@@ -358,5 +409,46 @@ void main() {
       // closing semicolon — passed through from the & onward.
       expect(result.nodes[0].value, '&unknown;&notclosed');
     });
+
+    // Port of the upstream test added in df490ee8:
+    // 'parseUiHierarchy keeps React Native content under a transparent Expo
+    // tools overlay' — verifies that the tightened canCoverSibling logic
+    // (hasOwnAgentVisibleContent || hasActionableDescendant) does not
+    // incorrectly prune content under a transparent overlay that only has
+    // non-hittable visible children (e.g. an ImageView "Tools" button).
+    test(
+      'parseUiHierarchy keeps React Native content under a transparent Expo tools overlay',
+      () {
+        const xml = '''<hierarchy>
+  <node class="android.widget.FrameLayout" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="0">
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="1">
+      <node class="android.widget.TextView" text="Agent Device Tester" bounds="[24,80][280,140]" enabled="true" visible-to-user="true" drawing-order="1"/>
+      <node class="android.widget.Button" text="Gesture lab" bounds="[24,180][280,240]" clickable="true" enabled="true" visible-to-user="true" drawing-order="2"/>
+    </node>
+    <node class="android.view.ViewGroup" bounds="[0,0][390,844]" visible-to-user="true" drawing-order="2">
+      <node class="android.widget.ImageView" content-desc="Tools" bounds="[320,80][360,120]" enabled="true" visible-to-user="true" drawing-order="1"/>
+    </node>
+  </node>
+</hierarchy>''';
+
+        final result = parseUiHierarchy(xml, 800, const SnapshotOptions(raw: true));
+
+        expect(
+          result.nodes.any((node) => node.label == 'Agent Device Tester'),
+          isTrue,
+          reason: 'Agent Device Tester should be present',
+        );
+        expect(
+          result.nodes.any((node) => node.label == 'Gesture lab'),
+          isTrue,
+          reason: 'Gesture lab should be present',
+        );
+        expect(
+          result.nodes.any((node) => node.label == 'Tools'),
+          isTrue,
+          reason: 'Tools should be present',
+        );
+      },
+    );
   });
 }

@@ -123,6 +123,7 @@ void mergeReplacement(
     surface: existing.surface,
     hiddenContentAbove: hiddenContentAbove ?? existing.hiddenContentAbove,
     hiddenContentBelow: hiddenContentBelow ?? existing.hiddenContentBelow,
+    interactionBlocked: existing.interactionBlocked,
     presentationHints: existing.presentationHints,
   );
 }
@@ -308,6 +309,7 @@ RawSnapshotNode _reindexNode(
     surface: node.surface,
     hiddenContentAbove: node.hiddenContentAbove,
     hiddenContentBelow: node.hiddenContentBelow,
+    interactionBlocked: node.interactionBlocked,
     presentationHints: node.presentationHints,
   );
 }

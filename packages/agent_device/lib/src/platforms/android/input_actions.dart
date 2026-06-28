@@ -208,6 +208,7 @@ Future<Map<String, Object?>> scrollAndroid(
   ScrollDirection direction, {
   double? amount,
   double? pixels,
+  int? durationMs,
 }) async {
   final size = await getAndroidScreenSize(serial);
   final plan = buildScrollGesturePlan(
@@ -220,6 +221,9 @@ Future<Map<String, Object?>> scrollAndroid(
     ),
   );
 
+  // `adb shell input swipe` takes the gesture duration in ms; default to 300
+  // when the caller does not request one.
+  final swipeDurationMs = durationMs ?? 300;
   await runCmd(
     'adb',
     adbArgs(serial, [
@@ -230,7 +234,7 @@ Future<Map<String, Object?>> scrollAndroid(
       plan.y1.toString(),
       plan.x2.toString(),
       plan.y2.toString(),
-      '300',
+      swipeDurationMs.toString(),
     ]),
   );
 
@@ -241,6 +245,7 @@ Future<Map<String, Object?>> scrollAndroid(
     'x2': plan.x2,
     'y2': plan.y2,
     'pixels': plan.pixels,
+    'durationMs': swipeDurationMs,
     'referenceWidth': plan.referenceWidth,
     'referenceHeight': plan.referenceHeight,
   };

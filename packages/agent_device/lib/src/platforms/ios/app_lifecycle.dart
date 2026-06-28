@@ -147,15 +147,21 @@ Future<int?> openIosApp(
   String udid,
   String bundleId, {
   String? launchConsole,
+  List<String>? launchArgs,
 }) async {
-  final launchArgs = _buildIosSimulatorLaunchArgs(udid, bundleId, launchConsole: launchConsole);
+  final simctlArgs = _buildIosSimulatorLaunchArgs(
+    udid,
+    bundleId,
+    launchConsole: launchConsole,
+    launchArgs: launchArgs,
+  );
   if (launchConsole != null && launchConsole.isNotEmpty) {
-    await _runIosSimulatorConsoleLaunch(launchArgs, launchConsole);
+    await _runIosSimulatorConsoleLaunch(simctlArgs, launchConsole);
     return null;
   }
   final result = await runCmd(
     'xcrun',
-    launchArgs,
+    simctlArgs,
     const ExecOptions(timeoutMs: 30000),
   );
   // Output format: "<bundleId>: <pid>"
@@ -170,11 +176,15 @@ List<String> _buildIosSimulatorLaunchArgs(
   String udid,
   String bundleId, {
   String? launchConsole,
+  List<String>? launchArgs,
 }) {
   final args = ['launch'];
   if (launchConsole != null && launchConsole.isNotEmpty) args.add('--console-pty');
   args.add(udid);
   args.add(bundleId);
+  // App launch arguments are forwarded verbatim after the bundle id. An empty
+  // list adds nothing (a clean launch).
+  if (launchArgs != null) args.addAll(launchArgs);
   return buildSimctlArgs(args);
 }
 

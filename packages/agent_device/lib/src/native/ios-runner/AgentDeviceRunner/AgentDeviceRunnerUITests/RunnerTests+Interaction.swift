@@ -1,5 +1,17 @@
 import XCTest
 
+#if os(macOS)
+import CoreGraphics
+#endif
+
+private enum RunnerInterfaceOrientation {
+  static let unknown = 0
+  static let portrait = 1
+  static let portraitUpsideDown = 2
+  static let landscapeRight = 3
+  static let landscapeLeft = 4
+}
+
 extension RunnerTests {
   struct TouchVisualizationFrame {
     let x: Double
@@ -405,6 +417,7 @@ extension RunnerTests {
     app: XCUIApplication,
     wasVisible: Bool
   ) -> (wasVisible: Bool, pressed: Bool, visible: Bool) {
+#if os(iOS)
     let exceptionMessage = RunnerObjCExceptionCatcher.catchException({
       element.tap()
       element.typeText(XCUIKeyboardKey.return.rawValue)
@@ -418,6 +431,9 @@ extension RunnerTests {
     }
     sleepFor(0.2)
     return (wasVisible: wasVisible, pressed: true, visible: isKeyboardVisible(app: app))
+#else
+    return (wasVisible: wasVisible, pressed: false, visible: false)
+#endif
   }
 
   private func singleTextEntryElement(app: XCUIApplication) -> XCUIElement? {
@@ -597,6 +613,110 @@ extension RunnerTests {
 #endif
   }
 
+  func desktopScrollAt(
+    app: XCUIApplication,
+    x: Double,
+    y: Double,
+    direction: String,
+    pixels: Double,
+    durationMs: Double?
+  ) throws {
+#if os(macOS)
+    guard let events = desktopScrollWheelDeltaEvents(
+      direction: direction,
+      pixels: pixels,
+      durationMs: durationMs
+    ) else {
+      throw NSError(
+        domain: "AgentDeviceRunner",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "unsupported desktop scroll direction: \(direction)"]
+      )
+    }
+
+    let coordinate = interactionCoordinate(app: app, x: x, y: y)
+    let interval = desktopScrollEventIntervalSeconds(durationMs: durationMs, eventCount: events.count)
+    for (index, deltas) in events.enumerated() {
+      // Keep desktop scrolling on XCTest's coordinate API so macOS owns wheel synthesis, natural
+      // scrolling preference handling, and cursor placement instead of posting raw CGEvents.
+      coordinate.scroll(
+        byDeltaX: CGFloat(deltas.horizontal),
+        deltaY: CGFloat(deltas.vertical)
+      )
+      if interval > 0 && index < events.count - 1 {
+        Thread.sleep(forTimeInterval: interval)
+      }
+    }
+#elseif os(tvOS)
+    throw NSError(
+      domain: "AgentDeviceRunner",
+      code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "desktopScroll is not supported on tvOS"]
+    )
+#else
+    throw NSError(
+      domain: "AgentDeviceRunner",
+      code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "desktopScroll is only supported on macOS"]
+    )
+#endif
+  }
+
+  func desktopScrollWheelDeltas(direction: String, pixels: Double) -> (vertical: Int32, horizontal: Int32)? {
+    let magnitude = Int32(max(1, min(Double(Int32.max), pixels.rounded())))
+    switch direction {
+    case "up":
+      return (vertical: magnitude, horizontal: 0)
+    case "down":
+      return (vertical: -magnitude, horizontal: 0)
+    case "left":
+      return (vertical: 0, horizontal: magnitude)
+    case "right":
+      return (vertical: 0, horizontal: -magnitude)
+    default:
+      return nil
+    }
+  }
+
+  func desktopScrollWheelDeltaEvents(
+    direction: String,
+    pixels: Double,
+    durationMs: Double?
+  ) -> [(vertical: Int32, horizontal: Int32)]? {
+    guard let totalDeltas = desktopScrollWheelDeltas(direction: direction, pixels: pixels) else {
+      return nil
+    }
+    let magnitude = max(abs(Int(totalDeltas.vertical)), abs(Int(totalDeltas.horizontal)))
+    let duration = max(0, durationMs ?? 0)
+    let requestedEventCount = duration > 0 ? Int(ceil(duration / 16.0)) : 1
+    let eventCount = max(1, min(magnitude, requestedEventCount))
+    guard eventCount > 1 else {
+      return [totalDeltas]
+    }
+
+    if totalDeltas.vertical != 0 {
+      return distributeDesktopScrollDelta(totalDeltas.vertical, eventCount: eventCount)
+        .map { (vertical: $0, horizontal: 0) }
+    }
+    return distributeDesktopScrollDelta(totalDeltas.horizontal, eventCount: eventCount)
+      .map { (vertical: 0, horizontal: $0) }
+  }
+
+  func desktopScrollEventIntervalSeconds(durationMs: Double?, eventCount: Int) -> TimeInterval {
+    guard let durationMs, durationMs > 0, eventCount > 1 else { return 0 }
+    return (durationMs / 1000.0) / Double(eventCount - 1)
+  }
+
+  private func distributeDesktopScrollDelta(_ delta: Int32, eventCount: Int) -> [Int32] {
+    let sign: Int32 = delta < 0 ? -1 : 1
+    let magnitude = abs(Int(delta))
+    let base = magnitude / eventCount
+    let remainder = magnitude % eventCount
+    return (0..<eventCount).map { index in
+      sign * Int32(base + (index < remainder ? 1 : 0))
+    }
+  }
+
   func doubleTapAt(app: XCUIApplication, x: Double, y: Double) -> RunnerInteractionOutcome {
     if let outcome = selectFocusedTvElement(app: app, point: CGPoint(x: x, y: y), action: "double tap") {
       guard case .performed = outcome else { return outcome }
@@ -632,6 +752,130 @@ extension RunnerTests {
       return .performed
     }
     return performCoordinateDrag(app: app, x: x, y: y, x2: x2, y2: y2, holdDuration: holdDuration)
+  }
+
+  /// Rotates an interface-oriented point into the device-native (portrait) space the
+  /// synthesized event path consumes — synthesized events skip XCTest's orientation
+  /// handling, so without this a landscape tap lands in the wrong place.
+  func nativeSynthesizedPoint(
+    orientedX x: Double,
+    orientedY y: Double,
+    in frame: CGRect,
+    interfaceOrientation: Int
+  ) -> CGPoint {
+    let localX = x - Double(frame.minX)
+    let localY = y - Double(frame.minY)
+    let width = Double(frame.width)
+    let height = Double(frame.height)
+    switch interfaceOrientation {
+    case RunnerInterfaceOrientation.landscapeRight:
+      return CGPoint(x: height - localY, y: localX)
+    case RunnerInterfaceOrientation.landscapeLeft:
+      return CGPoint(x: localY, y: width - localX)
+    case RunnerInterfaceOrientation.portraitUpsideDown:
+      return CGPoint(x: width - localX, y: height - localY)
+    default:  // portrait or unknown
+      return CGPoint(x: localX, y: localY)
+    }
+  }
+
+  /// Rotates an interface-oriented translation vector into the same native
+  /// coordinate space as `nativeSynthesizedPoint`.
+  func nativeSynthesizedVector(
+    orientedDx dx: Double,
+    orientedDy dy: Double,
+    interfaceOrientation: Int
+  ) -> CGVector {
+    switch interfaceOrientation {
+    case RunnerInterfaceOrientation.landscapeRight:
+      return CGVector(dx: -dy, dy: dx)
+    case RunnerInterfaceOrientation.landscapeLeft:
+      return CGVector(dx: dy, dy: -dx)
+    case RunnerInterfaceOrientation.portraitUpsideDown:
+      return CGVector(dx: -dx, dy: -dy)
+    default:  // portrait or unknown
+      return CGVector(dx: dx, dy: dy)
+    }
+  }
+
+  func synthesizedDragAt(
+    app: XCUIApplication,
+    x: Double,
+    y: Double,
+    x2: Double,
+    y2: Double,
+    durationMs: Double
+  ) -> RunnerInteractionOutcome {
+#if os(iOS)
+    let orientation = Int(RunnerSynthesizedGesture.interfaceOrientation(forApplication: app))
+    let frame = app.frame
+    let start = nativeSynthesizedPoint(orientedX: x, orientedY: y, in: frame, interfaceOrientation: orientation)
+    let end = nativeSynthesizedPoint(orientedX: x2, orientedY: y2, in: frame, interfaceOrientation: orientation)
+    if let message = RunnerSynthesizedGesture.synthesizeSwipe(
+      withApplication: app,
+      x: Double(start.x),
+      y: Double(start.y),
+      x2: Double(end.x),
+      y2: Double(end.y),
+      durationMs: durationMs
+    ) {
+      return .unsupported(
+        message: message,
+        hint: "Falling back to XCTest coordinate drag may be slower; update Xcode if this persists."
+      )
+    }
+    return .performed
+#elseif os(tvOS)
+    return .unsupported(
+      message: "coordinate drag is not supported on tvOS",
+      hint: "tvOS has no coordinate input; use remote-driven swipe/scroll to move focus instead."
+    )
+#else
+    return .unsupported(
+      message: "coordinate drag is not supported on macOS",
+      hint: "macOS automation has no touchscreen; use mouse-driven interactions instead."
+    )
+#endif
+  }
+
+  func synthesizedTapAt(app: XCUIApplication, x: Double, y: Double) -> RunnerInteractionOutcome {
+#if os(iOS)
+    let orientation = Int(RunnerSynthesizedGesture.interfaceOrientation(forApplication: app))
+    let point = nativeSynthesizedPoint(orientedX: x, orientedY: y, in: app.frame, interfaceOrientation: orientation)
+    if let message = RunnerSynthesizedGesture.synthesizeTap(
+      withApplication: app,
+      x: Double(point.x),
+      y: Double(point.y)
+    ) {
+      return .unsupported(
+        message: message,
+        hint: "Falling back to XCTest coordinate tap may be slower and can still need a healthy accessibility tree."
+      )
+    }
+    return .performed
+#elseif os(tvOS)
+    return .unsupported(
+      message: "coordinate tap is not supported on tvOS; move focus with swipe or scroll, then select the focused element",
+      hint: "tvOS has no coordinate input; move focus with swipe/scroll to the target, then select it."
+    )
+#else
+    return .unsupported(
+      message: "synthesized coordinate tap is not supported on macOS",
+      hint: "macOS automation has no touchscreen; use mouse-driven interactions instead."
+    )
+#endif
+  }
+
+  // Dart-port: helper used by tapSeries/dragSeries commands in RunnerTests+CommandExecution.
+  func runSeries(count: Int, pauseMs: Double, operation: (Int) -> Void) {
+    let total = max(count, 1)
+    let pause = max(pauseMs, 0)
+    for idx in 0..<total {
+      operation(idx)
+      if idx < total - 1 && pause > 0 {
+        sleepFor(pause / 1000.0)
+      }
+    }
   }
 
   func keyboardAvoidingDragPoints(
@@ -779,16 +1023,6 @@ extension RunnerTests {
 #endif
   }
 
-  func runSeries(count: Int, pauseMs: Double, operation: (Int) -> Void) {
-    let total = max(count, 1)
-    let pause = max(pauseMs, 0)
-    for idx in 0..<total {
-      operation(idx)
-      if idx < total - 1 && pause > 0 {
-        sleepFor(pause / 1000.0)
-      }
-    }
-  }
 
   func swipe(app: XCUIApplication, direction: String) -> DragVisualizationFrame? {
     if performTvRemoteSwipeIfAvailable(direction: direction) {
@@ -900,12 +1134,15 @@ extension RunnerTests {
   ) -> RunnerInteractionOutcome {
 #if os(iOS)
     let target = interactionRoot(app: app)
+    let orientation = Int(RunnerSynthesizedGesture.interfaceOrientation(forApplication: app))
+    let point = nativeSynthesizedPoint(orientedX: x, orientedY: y, in: app.frame, interfaceOrientation: orientation)
+    let vector = nativeSynthesizedVector(orientedDx: dx, orientedDy: dy, interfaceOrientation: orientation)
     if let message = RunnerSynthesizedGesture.synthesizeTransform(
       withApplication: app,
-      x: x,
-      y: y,
-      dx: dx,
-      dy: dy,
+      x: Double(point.x),
+      y: Double(point.y),
+      dx: Double(vector.dx),
+      dy: Double(vector.dy),
       scale: scale,
       degrees: degrees,
       radius: transformGestureRadius(frame: target.frame, scale: scale),
@@ -1004,7 +1241,9 @@ extension RunnerTests {
   }
 
 #if !os(tvOS)
-  private func interactionCoordinate(app: XCUIApplication, x: Double, y: Double) -> XCUICoordinate {
+  // Dart-port deviation: internal (was private) so the restored adjustSlider
+  // handler in RunnerTests+CommandExecution.swift can build slider drag coords.
+  func interactionCoordinate(app: XCUIApplication, x: Double, y: Double) -> XCUICoordinate {
 #if os(iOS)
     let origin = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
     return origin.withOffset(CGVector(dx: x, dy: y))
@@ -1038,5 +1277,74 @@ extension RunnerTests {
     )
     let element = app.descendants(matching: .any).matching(predicate).firstMatch
     return element.exists ? element : nil
+  }
+
+  // Identity in portrait/unknown, 90° per landscape, 180° upside-down.
+  func testNativeSynthesizedPointRotatesByInterfaceOrientation() {
+    let portrait = CGRect(x: 0, y: 0, width: 834, height: 1210)
+    let landscape = CGRect(x: 0, y: 0, width: 1210, height: 834)
+    let offsetLandscape = CGRect(x: 10, y: 20, width: 1210, height: 834)
+    // (frame, UIInterfaceOrientation, expected native point) for a tap at (170, 268).
+    let cases: [(CGRect, Int, CGPoint)] = [
+      (portrait, RunnerInterfaceOrientation.portrait, CGPoint(x: 170, y: 268)),
+      (landscape, RunnerInterfaceOrientation.landscapeRight, CGPoint(x: 566, y: 170)),
+      (landscape, RunnerInterfaceOrientation.landscapeLeft, CGPoint(x: 268, y: 1040)),
+      (portrait, RunnerInterfaceOrientation.portraitUpsideDown, CGPoint(x: 664, y: 942)),
+      (portrait, RunnerInterfaceOrientation.unknown, CGPoint(x: 170, y: 268)),
+    ]
+    for (frame, orientation, expected) in cases {
+      XCTAssertEqual(
+        nativeSynthesizedPoint(orientedX: 170, orientedY: 268, in: frame, interfaceOrientation: orientation),
+        expected,
+        "interfaceOrientation \(orientation)"
+      )
+    }
+    XCTAssertEqual(
+      nativeSynthesizedPoint(
+        orientedX: 180,
+        orientedY: 288,
+        in: offsetLandscape,
+        interfaceOrientation: RunnerInterfaceOrientation.landscapeLeft
+      ),
+      CGPoint(x: 268, y: 1040),
+      "non-zero frame origin is localized before rotation"
+    )
+  }
+
+  func testNativeSynthesizedVectorRotatesByInterfaceOrientation() {
+    let cases: [(Int, CGVector)] = [
+      (RunnerInterfaceOrientation.portrait, CGVector(dx: 40, dy: -20)),
+      (RunnerInterfaceOrientation.landscapeRight, CGVector(dx: 20, dy: 40)),
+      (RunnerInterfaceOrientation.landscapeLeft, CGVector(dx: -20, dy: -40)),
+      (RunnerInterfaceOrientation.portraitUpsideDown, CGVector(dx: -40, dy: 20)),
+      (RunnerInterfaceOrientation.unknown, CGVector(dx: 40, dy: -20)),
+    ]
+    for (orientation, expected) in cases {
+      let vector = nativeSynthesizedVector(orientedDx: 40, orientedDy: -20, interfaceOrientation: orientation)
+      XCTAssertEqual(vector.dx, expected.dx, "dx interfaceOrientation \(orientation)")
+      XCTAssertEqual(vector.dy, expected.dy, "dy interfaceOrientation \(orientation)")
+    }
+  }
+
+  func testDesktopScrollWheelDeltasMapDirections() throws {
+    XCTAssertEqual(try XCTUnwrap(desktopScrollWheelDeltas(direction: "up", pixels: 120)).vertical, 120)
+    XCTAssertEqual(try XCTUnwrap(desktopScrollWheelDeltas(direction: "down", pixels: 120)).vertical, -120)
+    XCTAssertEqual(try XCTUnwrap(desktopScrollWheelDeltas(direction: "left", pixels: 120)).horizontal, 120)
+    XCTAssertEqual(try XCTUnwrap(desktopScrollWheelDeltas(direction: "right", pixels: 120)).horizontal, -120)
+    XCTAssertNil(desktopScrollWheelDeltas(direction: "diagonal", pixels: 120))
+  }
+
+  func testDesktopScrollWheelDeltaEventsHonorDurationAndPreservePixels() throws {
+    let events = try XCTUnwrap(desktopScrollWheelDeltaEvents(direction: "down", pixels: 200, durationMs: 50))
+    XCTAssertEqual(events.count, 4)
+    XCTAssertEqual(events.map(\.vertical).reduce(0, +), -200)
+    XCTAssertEqual(events.map(\.horizontal).reduce(0, +), 0)
+    XCTAssertEqual(desktopScrollEventIntervalSeconds(durationMs: 50, eventCount: events.count), 0.05 / 3.0)
+  }
+
+  func testDesktopScrollWheelDeltaEventsKeepInstantScrollSingleEvent() throws {
+    let events = try XCTUnwrap(desktopScrollWheelDeltaEvents(direction: "down", pixels: 200, durationMs: 0))
+    XCTAssertEqual(events.count, 1)
+    XCTAssertEqual(events.first?.vertical, -200)
   }
 }

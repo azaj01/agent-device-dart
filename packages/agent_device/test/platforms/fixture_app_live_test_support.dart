@@ -427,8 +427,37 @@ Future<void> swipeUp(
   num endX = 200,
   num endY = 220,
   int durationMs = 250,
+  Duration maxSettle = const Duration(milliseconds: 2500),
+  Duration pollInterval = const Duration(milliseconds: 250),
 }) async {
   await device.swipe(startX, startY, endX, endY, durationMs: durationMs);
+  // Wait for scroll momentum to settle before the next interaction. Tapping a
+  // node mid-fling lands on a stale/moving frame and the tap silently no-ops
+  // (e.g. a card tap that doesn't navigate). Poll until two consecutive
+  // snapshots are positionally identical (scroll stopped) rather than guessing
+  // a fixed delay — adapts to device speed, capped at [maxSettle].
+  final deadline = DateTime.now().add(maxSettle);
+  String? previous;
+  while (DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(pollInterval);
+    final signature = await _scrollSettleSignature(device);
+    if (signature != null && signature == previous) return;
+    previous = signature;
+  }
+}
+
+/// A positional fingerprint of the current screen (each node's identifier +
+/// rounded y), used to detect when a scroll has stopped moving.
+Future<String?> _scrollSettleSignature(AgentDevice device) async {
+  try {
+    final snapshot = await device.snapshot();
+    final nodes = (snapshot.nodes ?? const []).whereType<SnapshotNode>();
+    return nodes
+        .map((n) => '${n.identifier ?? ''}:${n.rect?.y.round() ?? ''}')
+        .join('|');
+  } on Object {
+    return null;
+  }
 }
 
 Future<void> fillTextField(

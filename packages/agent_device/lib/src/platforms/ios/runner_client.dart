@@ -57,6 +57,32 @@ bool shouldPreflightMutatingRunnerCommand(
       runnerTapPreflightSkipFreshness;
 }
 
+/// Ambient overrides for using an externally-built (e.g. CI-signed) iOS
+/// XCTest runner artifact instead of building one. Set from the CLI flags
+/// `--ios-xctestrun-file` / `--ios-xctest-derived-data-path` /
+/// `--ios-xctest-env-dir` (port of upstream #806, additive). When
+/// [xctestrunFile] is set, [IosRunnerClient.launch] uses it directly and
+/// skips the build/cache path entirely — the artifact is trusted as-is, which
+/// is what lets a pre-signed device runner be reused without re-signing.
+class IosRunnerLaunchOverrides {
+  /// Path to an externally built `.xctestrun` artifact. When set, skip build.
+  static String? xctestrunFile;
+
+  /// Build products / derived-data products dir the artifact resolves
+  /// `__TESTROOT__` against. Defaults to the `.xctestrun`'s parent directory.
+  static String? derivedDataPath;
+
+  /// Writable scratch dir for the env-injected `.xctestrun` copy. Useful when
+  /// the artifact lives in a read-only location (CI). Defaults to a temp dir.
+  static String? envDir;
+
+  /// True when an external prebuilt artifact has been configured.
+  static bool get hasExternalArtifact =>
+      (xctestrunFile ?? '').trim().isNotEmpty;
+
+  const IosRunnerLaunchOverrides._();
+}
+
 /// JSON envelope returned by the runner: `{ok: bool, data|error: ...}`.
 class RunnerResponse {
   final bool ok;
@@ -244,6 +270,53 @@ class IosRunnerClient {
     return matching;
   }
 
+  /// Cached once Developer Mode is confirmed enabled (or the probe itself is
+  /// unavailable). The security state can't change mid-process, so we only run
+  /// the `DevToolsSecurity` subprocess once per process when it succeeds — but
+  /// keep re-checking while it reports *disabled*, so a user who enables it can
+  /// retry without restarting.
+  static bool _developerModeVerified = false;
+
+  /// Fail fast when Developer Mode for Apple development tools is disabled.
+  /// `DevToolsSecurity -status` prints "Developer mode is currently disabled"
+  /// in that state; UI test runners then never attach. Best-effort: any
+  /// probe failure (tool missing, timeout) is ignored so we don't block
+  /// launch on machines where the check itself can't run.
+  static Future<void> _verifyDeveloperModeForIosRunner() async {
+    if (_developerModeVerified) return;
+    RunCmdResult result;
+    try {
+      result = await runCmd(
+        'DevToolsSecurity',
+        ['-status'],
+        const ExecOptions(allowFailure: true, timeoutMs: 2000),
+      );
+    } catch (_) {
+      // Probe unavailable (tool missing, sandbox, timeout) — stop retrying.
+      _developerModeVerified = true;
+      return;
+    }
+    final output = '${result.stdout}\n${result.stderr}';
+    if (!RegExp(
+      'developer mode is currently disabled',
+      caseSensitive: false,
+    ).hasMatch(output)) {
+      _developerModeVerified = true;
+      return;
+    }
+    throw AppError(
+      AppErrorCodes.commandFailed,
+      'Developer mode is disabled for Apple development tools',
+      details: {
+        'hint':
+            'Run `sudo DevToolsSecurity -enable`, then retry the iOS runner. '
+            'UI test runners start suspended until Xcode/testmanagerd can '
+            'attach.',
+        'devToolsSecurityStatus': output.trim(),
+      },
+    );
+  }
+
   /// Try [findXctestrun]; if the products dir doesn't exist, auto-build
   /// the runner via `xcodebuild build-for-testing` then retry. Device
   /// builds require a provisioning profile and are NOT auto-built — they
@@ -382,8 +455,17 @@ class IosRunnerClient {
     required File template,
     required String productsDir,
     required Map<String, String> envVars,
+    String? outputDir,
   }) async {
-    final tmpDir = await Directory.systemTemp.createTemp('ad-ios-runner-');
+    final Directory tmpDir;
+    if (outputDir != null && outputDir.trim().isNotEmpty) {
+      // Create a unique subdir under the caller's scratch dir so we never
+      // clobber files already there (the dir may be reused across runs).
+      await Directory(outputDir.trim()).create(recursive: true);
+      tmpDir = await Directory(outputDir.trim()).createTemp('ad-ios-runner-');
+    } else {
+      tmpDir = await Directory.systemTemp.createTemp('ad-ios-runner-');
+    }
     final out = File(p.join(tmpDir.path, 'runner.xctestrun'));
     await out.writeAsBytes(await template.readAsBytes());
 
@@ -439,17 +521,55 @@ class IosRunnerClient {
     startupTimeout ??= kind == IosRunnerKind.device
         ? const Duration(seconds: 180)
         : const Duration(seconds: 120);
-    final initialProductsDir = resolveBuildProductsDir(
-      override: buildProductsDirOverride,
-      kind: kind,
-    );
-    final ensured = await _ensureXctestrun(initialProductsDir, kind: kind);
-    final productsDir = ensured.productsDir;
+    // UI test runners launch suspended until Xcode/testmanagerd can attach;
+    // when Developer Mode for Apple development tools is disabled the runner
+    // never comes up, surfacing only as an opaque startup timeout. Detect it
+    // up front and emit an actionable hint. Port of c4950a94.
+    await _verifyDeveloperModeForIosRunner();
+    // Snapshot the ambient overrides once so a concurrent mutation can't mix
+    // one launch's artifact with another's derived-data/env-dir.
+    final externalXctestrun = IosRunnerLaunchOverrides.xctestrunFile?.trim();
+    final externalDerivedData = IosRunnerLaunchOverrides.derivedDataPath?.trim();
+    final externalEnvDir = IosRunnerLaunchOverrides.envDir?.trim();
+    // External prebuilt artifact (CI-signed runner): use the supplied
+    // .xctestrun directly and skip the build/cache path entirely.
+    final File template;
+    final String productsDir;
+    if (externalXctestrun != null && externalXctestrun.isNotEmpty) {
+      // Resolve to absolute so a relative --ios-xctestrun-file doesn't depend
+      // on an ambiguous CWD, and the "not found" error shows the real path.
+      final file = File(externalXctestrun).absolute;
+      if (!await file.exists()) {
+        throw AppError(
+          AppErrorCodes.invalidArgs,
+          'iOS xctestrun artifact not found: ${file.path}',
+          details: {
+            'hint': 'Pass --ios-xctestrun-file pointing at a built '
+                '.xctestrun (e.g. <derivedData>/Build/Products/*.xctestrun).',
+          },
+        );
+      }
+      template = file;
+      productsDir = (externalDerivedData ?? '').isNotEmpty
+          ? p.absolute(externalDerivedData!)
+          : p.dirname(file.path);
+      logger.trace('[runner] using external xctestrun=${file.path}  '
+          'products=$productsDir');
+    } else {
+      final initialProductsDir = resolveBuildProductsDir(
+        override: buildProductsDirOverride,
+        kind: kind,
+      );
+      final ensured = await _ensureXctestrun(initialProductsDir, kind: kind);
+      template = ensured.template;
+      productsDir = ensured.productsDir;
+    }
     final port = await pickFreePort();
     final xctestrunPath = await prepareXctestrunWithEnv(
-      template: ensured.template,
+      template: template,
       productsDir: productsDir,
       envVars: {'AGENT_DEVICE_RUNNER_PORT': '$port'},
+      outputDir: (externalEnvDir ?? '').isEmpty ? null : externalEnvDir,
     );
 
     final logDir = await Directory.systemTemp.createTemp('ad-ios-runner-log-');

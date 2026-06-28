@@ -114,8 +114,9 @@ void main() {
       expect(input.replaceAll(' ', '%s'), equals(encoded));
     });
 
-    test('scrollAndroid builds swipe command with 300ms duration', () {
-      // Verification: scroll translates to swipe with fixed 300ms duration
+    test('scrollAndroid builds swipe command with default 300ms duration', () {
+      // Verification: scroll translates to swipe; duration defaults to 300ms
+      // when the caller does not request one.
       final expected = [
         '-s',
         'test-serial',
@@ -126,11 +127,11 @@ void main() {
         'y1',
         'x2',
         'y2',
-        '300', // duration
+        '300', // default duration
       ];
       expect(expected.sublist(2), contains('shell'));
       expect(expected.sublist(2), contains('swipe'));
-      expect(expected[9], equals('300')); // duration is always 300ms
+      expect(expected[9], equals('300')); // default duration is 300ms
     });
   });
 }

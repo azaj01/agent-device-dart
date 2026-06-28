@@ -4,6 +4,8 @@ library;
 import 'package:agent_device/src/backend/backend.dart';
 import 'package:agent_device/src/platforms/android/android_backend.dart';
 import 'package:agent_device/src/platforms/ios/ios_backend.dart';
+import 'package:agent_device/src/platforms/ios/runner_client.dart'
+    show IosRunnerLaunchOverrides;
 import 'package:agent_device/src/platforms/platform_selector.dart';
 import 'package:agent_device/src/runtime/agent_device.dart';
 import 'package:agent_device/src/runtime/contract.dart';
@@ -36,6 +38,24 @@ abstract class AgentDeviceCommand extends Command<int> {
       )
       ..addOption('serial', help: 'Explicit device serial / udid to target.')
       ..addOption('device', help: 'Device name to target.')
+      ..addOption(
+        'ios-xctestrun-file',
+        help:
+            'Use an externally built (e.g. CI-signed) iOS XCTest runner '
+            '.xctestrun artifact instead of building one. Skips the build.',
+      )
+      ..addOption(
+        'ios-xctest-derived-data-path',
+        help:
+            'Build products dir the external .xctestrun resolves '
+            '__TESTROOT__ against (defaults to the artifact\'s directory).',
+      )
+      ..addOption(
+        'ios-xctest-env-dir',
+        help:
+            'Writable scratch dir for the env-injected .xctestrun copy '
+            '(use when the artifact lives in a read-only location, e.g. CI).',
+      )
       ..addOption(
         'state-dir',
         help:
@@ -158,6 +178,12 @@ abstract class AgentDeviceCommand extends Command<int> {
   /// reuse the record.
   Future<AgentDevice> openAgentDevice({CommandSessionStore? sessions}) async {
     if (verbose) initLogger(verbose: true);
+    // Wire external prebuilt iOS runner artifact options (if any) into the
+    // ambient launch overrides the iOS runner client consults.
+    IosRunnerLaunchOverrides.xctestrunFile = _stringOption('ios-xctestrun-file');
+    IosRunnerLaunchOverrides.derivedDataPath =
+        _stringOption('ios-xctest-derived-data-path');
+    IosRunnerLaunchOverrides.envDir = _stringOption('ios-xctest-env-dir');
     final store = sessions ?? resolveSessionStore();
     // Prefer the device remembered for this session if the user hasn't
     // narrowed down via --serial / --device. This is what lets

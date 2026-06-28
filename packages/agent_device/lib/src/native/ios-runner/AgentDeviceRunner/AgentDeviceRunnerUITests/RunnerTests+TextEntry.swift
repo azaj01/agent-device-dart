@@ -592,6 +592,15 @@ extension RunnerTests {
 
   func waitForTextEntryReadinessAfterTap(app: XCUIApplication, element: XCUIElement) {
 #if os(iOS)
+    // Dart-port deviation: a tap can navigate away (e.g. a button that
+    // dismisses its own screen), leaving `element` with no matching snapshot.
+    // Accessing `.elementType` then records an XCTest "Failed to get matching
+    // snapshot" failure, which under the long-lived runner accumulates
+    // failure-handling overhead (screenshots) and destabilizes it. `exists` is
+    // a safe boolean re-query (returns false without recording a failure), so
+    // skip readiness when the tapped element is gone — it can't need text-entry
+    // focus anyway.
+    guard element.exists else { return }
     switch element.elementType {
     case .textField, .secureTextField, .searchField, .textView:
       if waitForFocusedTextInput(app: app, timeout: TextEntryTiming.readinessTimeout) != nil {

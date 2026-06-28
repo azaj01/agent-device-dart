@@ -3,6 +3,8 @@
 enum CommandType: String, Codable {
   case tap
   case mouseClick
+  // Dart-port deviation: upstream dropped tapSeries/dragSeries/interactionFrame;
+  // the Dart port keeps them (live fixture tests).
   case tapSeries
   case longPress
   case interactionFrame
@@ -11,6 +13,8 @@ enum CommandType: String, Codable {
   case remotePress
   case type
   case swipe
+  case scroll
+  case desktopScroll
   case findText
   case querySelector
   case readText
@@ -26,6 +30,7 @@ enum CommandType: String, Codable {
   case keyboardReturn
   case alert
   case pinch
+  case sequence
   case rotateGesture
   case transformGesture
   case recordStart
@@ -33,6 +38,9 @@ enum CommandType: String, Codable {
   case status
   case uptime
   case shutdown
+  // Dart-port deviation: upstream dropped its dedicated slider command; the
+  // Dart port keeps `adjustSlider` (it has a live fixture test for it).
+  case adjustSlider
 }
 
 /// Runner command traits — see CONTEXT.md ("Runner command traits").
@@ -68,12 +76,16 @@ extension CommandType {
   var traits: CommandTraits {
     switch self {
     // Interaction commands: require the foreground-guard + stabilization preflight.
-    // tapSeries/dragSeries are the series forms of tap/drag; keyboardReturn is the sibling
-    // of keyboardDismiss — all three were missing from the historical switch (drift the
-    // table now prevents) and are classified as interactions here.
+    // keyboardReturn is the sibling of keyboardDismiss (missing from the historical switch —
+    // drift the table now prevents). .scroll is the fused frame-resolve + drag scroll; same
+    // classification as .drag. .desktopScroll is the macOS frame-resolve + wheel event sibling.
+    // .sequence is the fused multi-step gesture batch.
+    // tapSeries/dragSeries are the series forms of tap/drag (Dart-port deviations).
     case .tap, .tapSeries, .longPress, .drag, .dragSeries, .remotePress, .type, .swipe,
+         .scroll, .desktopScroll,
          .back, .backInApp, .backSystem, .rotate, .appSwitcher,
-         .keyboardDismiss, .keyboardReturn, .pinch, .rotateGesture, .transformGesture:
+         .keyboardDismiss, .keyboardReturn, .pinch, .sequence, .rotateGesture, .transformGesture,
+         .adjustSlider:
       return CommandTraits(isInteraction: true, readOnly: .never, isLifecycle: false)
 
     // Read-only reads: eligible for the session-invalidating retry.
@@ -119,10 +131,17 @@ struct Command: Codable {
   let textEntryMode: String?
   let clearFirst: Bool?
   let action: String?
+  // Dart-port deviation: adjustSlider command fields (see CommandType).
+  let normalizedPosition: Double?
+  let rectX: Double?
+  let rectY: Double?
+  let rectW: Double?
+  let rectH: Double?
   let x: Double?
   let y: Double?
   let button: String?
   let remoteButton: String?
+  // Dart-port deviation: tapSeries/dragSeries fields.
   let count: Double?
   let intervalMs: Double?
   let doubleTap: Bool?
@@ -134,6 +153,8 @@ struct Command: Codable {
   let dy: Double?
   let durationMs: Double?
   let direction: String?
+  let amount: Double?
+  let pixels: Double?
   let orientation: String?
   let scale: Double?
   let degrees: Double?
@@ -147,6 +168,39 @@ struct Command: Codable {
   let scope: String?
   let raw: Bool?
   let fullscreen: Bool?
+  let synthesized: Bool?
+  // Dart-port deviation: `steps` is Int for adjustSlider, but upstream uses [SequenceStep]
+  // for the sequence command. We rename adjustSlider's field to `sliderSteps` to avoid
+  // the conflict.
+  let sliderSteps: Int?
+  let steps: [SequenceStep]?
+}
+
+/// One allowlisted coordinate gesture step inside a fused `sequence` command.
+/// `kind` is decoded as a raw String (not an enum) so the runner can return a clear
+/// INVALID_ARGS for an unknown kind instead of a generic decode failure.
+struct SequenceStep: Codable {
+  let kind: String
+  let x: Double?
+  let y: Double?
+  let x2: Double?
+  let y2: Double?
+  let durationMs: Double?
+  let pauseMs: Double?
+  /// For `tap`/`drag` steps on iOS non-tv: use the synthesized HID fast path instead of the
+  /// drag-based XCUICoordinate path, matching the individual command behavior.
+  let synthesized: Bool?
+}
+
+/// Per-step result for a `sequence` response. `ok:false` carries the failing step's
+/// errorCode/errorMessage; execution stops at the first failed step.
+struct SequenceStepResult: Codable {
+  let ok: Bool
+  let kind: String
+  let errorCode: String?
+  let errorMessage: String?
+  let gestureStartUptimeMs: Double?
+  let gestureEndUptimeMs: Double?
 }
 
 struct Response: Codable {
@@ -161,6 +215,18 @@ struct Response: Codable {
   }
 }
 
+extension Response {
+  // The daemon pairs this gesture-clock anchor with its own receipt time to map
+  // gesture uptimes onto wall-clock for the recording touch overlay. Error responses
+  // carry no anchor so the daemon falls back instead of pairing a stale value.
+  func stampingCurrentUptimeMs(_ value: Double) -> Response {
+    guard ok else { return self }
+    var payload = data ?? DataPayload()
+    payload.currentUptimeMs = value
+    return Response(ok: ok, data: payload, error: error)
+  }
+}
+
 struct DataPayload: Codable {
   let message: String?
   let text: String?
@@ -168,6 +234,7 @@ struct DataPayload: Codable {
   let items: [String]?
   let nodes: [SnapshotNode]?
   let truncated: Bool?
+  let snapshotQuality: SnapshotQuality?
   let gestureStartUptimeMs: Double?
   let gestureEndUptimeMs: Double?
   let x: Double?
@@ -176,7 +243,7 @@ struct DataPayload: Codable {
   let y2: Double?
   let referenceWidth: Double?
   let referenceHeight: Double?
-  let currentUptimeMs: Double?
+  var currentUptimeMs: Double?
   let commandId: String?
   let lifecycleState: String?
   let lifecycleCommand: String?
@@ -189,6 +256,14 @@ struct DataPayload: Codable {
   let wasVisible: Bool?
   let dismissed: Bool?
   let orientation: String?
+  let gestureFallback: String?
+  let gestureFallbackMessage: String?
+  let gestureFallbackHint: String?
+  let runnerFatal: Bool?
+  let runnerFatalReason: String?
+  let completedSteps: Int?
+  let failedStepIndex: Int?
+  let sequenceResults: [SequenceStepResult]?
 
   init(
     message: String? = nil,
@@ -197,6 +272,7 @@ struct DataPayload: Codable {
     items: [String]? = nil,
     nodes: [SnapshotNode]? = nil,
     truncated: Bool? = nil,
+    snapshotQuality: SnapshotQuality? = nil,
     gestureStartUptimeMs: Double? = nil,
     gestureEndUptimeMs: Double? = nil,
     x: Double? = nil,
@@ -217,7 +293,15 @@ struct DataPayload: Codable {
     visible: Bool? = nil,
     wasVisible: Bool? = nil,
     dismissed: Bool? = nil,
-    orientation: String? = nil
+    orientation: String? = nil,
+    gestureFallback: String? = nil,
+    gestureFallbackMessage: String? = nil,
+    gestureFallbackHint: String? = nil,
+    runnerFatal: Bool? = nil,
+    runnerFatalReason: String? = nil,
+    completedSteps: Int? = nil,
+    failedStepIndex: Int? = nil,
+    sequenceResults: [SequenceStepResult]? = nil
   ) {
     self.message = message
     self.text = text
@@ -225,6 +309,7 @@ struct DataPayload: Codable {
     self.items = items
     self.nodes = nodes
     self.truncated = truncated
+    self.snapshotQuality = snapshotQuality
     self.gestureStartUptimeMs = gestureStartUptimeMs
     self.gestureEndUptimeMs = gestureEndUptimeMs
     self.x = x
@@ -246,6 +331,14 @@ struct DataPayload: Codable {
     self.wasVisible = wasVisible
     self.dismissed = dismissed
     self.orientation = orientation
+    self.gestureFallback = gestureFallback
+    self.gestureFallbackMessage = gestureFallbackMessage
+    self.gestureFallbackHint = gestureFallbackHint
+    self.runnerFatal = runnerFatal
+    self.runnerFatalReason = runnerFatalReason
+    self.completedSteps = completedSteps
+    self.failedStepIndex = failedStepIndex
+    self.sequenceResults = sequenceResults
   }
 }
 
@@ -287,8 +380,17 @@ struct SnapshotNode: Codable {
 
 struct SnapshotOptions {
   let interactiveOnly: Bool
+  // Dart-port deviation: compact is a Dart-specific option (not in upstream).
   let compact: Bool
   let depth: Int?
   let scope: String?
   let raw: Bool
+
+  init(interactiveOnly: Bool, compact: Bool = false, depth: Int?, scope: String?, raw: Bool) {
+    self.interactiveOnly = interactiveOnly
+    self.compact = compact
+    self.depth = depth
+    self.scope = scope
+    self.raw = raw
+  }
 }

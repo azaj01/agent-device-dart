@@ -3,6 +3,8 @@ library;
 
 import 'package:agent_device/src/snapshot/processing.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
+import 'package:agent_device/src/snapshot/snapshot_occlusion.dart'
+    show isSnapshotNodeInteractionBlocked;
 
 /// List of semantic role fragments that should be preferred as touch targets.
 /// These represent interactive elements that have well-defined touch surfaces.
@@ -35,7 +37,10 @@ enum ActionableTouchResolutionReason {
   overlyBroadAncestor('overly-broad-ancestor'),
 
   /// The original node was used as-is.
-  original('original');
+  original('original'),
+
+  /// The node (or its resolved ancestor) is covered by a floating overlay.
+  covered('covered');
 
   final String value;
   const ActionableTouchResolutionReason(this.value);
@@ -65,6 +70,15 @@ ActionableTouchResolution resolveActionableTouchResolution(
   List<SnapshotNode> nodes,
   SnapshotNode node,
 ) {
+  // Short-circuit: if the node itself is already annotated as covered, report
+  // it immediately so callers can surface the 'covered' reason to the user.
+  if (isSnapshotNodeInteractionBlocked(node)) {
+    return ActionableTouchResolution(
+      node: node,
+      reason: ActionableTouchResolutionReason.covered,
+    );
+  }
+
   // Try to find a more specific descendant with the same rect.
   final descendant = _findPreferredActionableDescendant(nodes, node);
   if (descendant != null &&
@@ -86,10 +100,11 @@ ActionableTouchResolution resolveActionableTouchResolution(
     );
   }
 
-  // Try to find a hittable ancestor.
+  // Try to find a hittable ancestor (skip if it is itself covered).
   final ancestor = findNearestHittableAncestor(nodes, node);
   if (ancestor != null &&
       ancestor.rect != null &&
+      !isSnapshotNodeInteractionBlocked(ancestor) &&
       _resolveRectCenter(ancestor.rect!) != null) {
     // Check if this ancestor is overly broad.
     if (_isOverlyBroadAncestor(node, ancestor, nodes)) {
@@ -138,7 +153,9 @@ SnapshotNode? _findPreferredActionableDescendant(
 
     // Find children with the same rect.
     final sameRectChildren = nodes.where((candidate) {
-      if (candidate.parentIndex != current.index || !candidate.hittable!) {
+      if (candidate.parentIndex != current.index ||
+          !candidate.hittable! ||
+          isSnapshotNodeInteractionBlocked(candidate)) {
         return false;
       }
       final candidateRect = _normalizeRect(candidate.rect);

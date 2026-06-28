@@ -55,13 +55,10 @@ void main() {
             ),
           ),
         );
-        // readText / pinch — also genuinely unsupported on Android.
+        // readText — genuinely unsupported on Android (base-class default).
+        // (pinch is now supported via the multitouch helper; not asserted here.)
         await expectLater(
           backend.readText(ctx, 'ignored'),
-          throwsA(isA<AppError>()),
-        );
-        await expectLater(
-          backend.pinch(ctx, const BackendPinchOptions(scale: 2.0)),
           throwsA(isA<AppError>()),
         );
       },

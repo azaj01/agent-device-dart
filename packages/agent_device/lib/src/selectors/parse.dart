@@ -280,13 +280,67 @@ String _unquote(String value) {
   final trimmed = value.trim();
   if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
       (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    final unquoted = trimmed.substring(1, trimmed.length - 1);
-    // Replace escaped quotes with the quote character
-    return unquoted
-        .replaceAll(RegExp(r'\\"'), '"')
-        .replaceAll(RegExp(r"\\'"), "'");
+    return _decodeQuotedSelectorValue(
+      trimmed.substring(1, trimmed.length - 1),
+    );
   }
   return trimmed;
+}
+
+const Map<String, String> _simpleEscapeReplacements = {
+  '"': '"',
+  "'": "'",
+  r'\': r'\',
+  '/': '/',
+  'b': '\b',
+  'f': '\f',
+  'n': '\n',
+  'r': '\r',
+  't': '\t',
+};
+
+final RegExp _hex4 = RegExp(r'^[0-9a-fA-F]{4}$');
+
+// Keep this manual so single-quoted selectors work and malformed hand-written
+// escapes stay literal.
+String _decodeQuotedSelectorValue(String value) {
+  final decoded = StringBuffer();
+  var cursor = 0;
+  while (cursor < value.length) {
+    final char = value[cursor];
+    if (char != r'\') {
+      decoded.write(char);
+      cursor += 1;
+      continue;
+    }
+    if (cursor + 1 >= value.length) {
+      decoded.write(char);
+      cursor += 1;
+      continue;
+    }
+    final escaped = value[cursor + 1];
+    final replacement = _simpleEscapeReplacements[escaped];
+    if (replacement != null) {
+      decoded.write(replacement);
+      cursor += 2;
+      continue;
+    }
+    if (escaped == 'u') {
+      final hex = (cursor + 6 <= value.length)
+          ? value.substring(cursor + 2, cursor + 6)
+          : '';
+      if (_hex4.hasMatch(hex)) {
+        // JSON-style \u escapes are code units; adjacent surrogate units
+        // compose in Dart strings (UTF-16), matching JS semantics.
+        decoded.writeCharCode(int.parse(hex, radix: 16));
+        cursor += 6;
+        continue;
+      }
+    }
+    decoded.write(char);
+    cursor += 1;
+  }
+  return decoded.toString();
 }
 
 /// Parse a boolean value.

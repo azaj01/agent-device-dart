@@ -428,8 +428,9 @@ List<String> _buildLineMetadata(
 ) {
   final metadata = <String>[];
   if (node.enabled == false) metadata.add('disabled');
+  if (node.presentationHints != null) metadata.addAll(node.presentationHints!);
   if (!options.summarizeTextSurfaces) {
-    return metadata;
+    return _uniqueMetadata(metadata);
   }
   if (node.selected == true) metadata.add('selected');
   if (_isEditableRole(type)) metadata.add('editable');

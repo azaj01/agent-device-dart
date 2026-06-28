@@ -3,6 +3,10 @@
 import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../../snapshot/snapshot.dart';
+import '../../snapshot/snapshot_occlusion.dart'
+    show annotateCoveredSnapshotNodes;
+import '../../utils/diagnostics.dart'
+    show DiagnosticLevel, EmitDiagnosticOptions, emitDiagnostic;
 import '../../utils/errors.dart' show AppError, AppErrorCodes;
 import '../../utils/exec.dart';
 import '../../utils/logger.dart';
@@ -11,6 +15,7 @@ import '../../utils/retry.dart';
 import '../../utils/scrollable.dart';
 import 'adb.dart';
 import 'scroll_hints.dart';
+import 'snapshot_content_recovery.dart';
 import 'snapshot_helper_artifact.dart';
 import 'snapshot_helper_capture.dart';
 import 'snapshot_helper_install.dart';
@@ -26,6 +31,14 @@ const _helperCommandTimeoutMs = 8000;
 /// Options for Android snapshot capture.
 class AndroidSnapshotOptions {
   final SnapshotOptions snapshot;
+
+  /// Bundle ID of the foreground app.
+  ///
+  /// When provided, content-recovery logic uses it to identify the foreground
+  /// app's accessibility window and detect when the helper returns an
+  /// insufficient view of that app.
+  final String? appBundleId;
+
   final AndroidSnapshotHelperArtifact? helperArtifact;
   final AndroidSnapshotHelperInstallPolicy helperInstallPolicy;
   final AndroidAdbExecutor? helperAdb;
@@ -34,6 +47,7 @@ class AndroidSnapshotOptions {
 
   const AndroidSnapshotOptions({
     this.snapshot = const SnapshotOptions(),
+    this.appBundleId,
     this.helperArtifact,
     this.helperInstallPolicy =
         AndroidSnapshotHelperInstallPolicy.missingOrOutdated,
@@ -132,8 +146,14 @@ snapshotAndroid(
     }
   }
 
+  // Annotate nodes covered by a floating overlay so interaction targeting can
+  // refuse to tap them (skipped for raw snapshots). Port of #708.
+  final resultNodes = snapshotOptions.raw == true
+      ? interactiveSnapshot.nodes
+      : annotateCoveredSnapshotNodes(interactiveSnapshot.nodes);
+
   return (
-    nodes: interactiveSnapshot.nodes,
+    nodes: resultNodes,
     truncated: interactiveSnapshot.truncated,
     analysis: interactiveSnapshot.analysis,
     androidSnapshot: capture.metadata,
@@ -231,7 +251,7 @@ _captureAndroidUiHierarchyOnce(
         'nodes=${capture.metadata.nodeCount} '
         '${capture.metadata.elapsedMs}ms',
       );
-      return (
+      final helperCapture = (
         xml: capture.xml,
         metadata: AndroidSnapshotBackendMetadata(
           backend: 'android-helper',
@@ -249,6 +269,18 @@ _captureAndroidUiHierarchyOnce(
           helperTruncated: capture.metadata.truncated,
           elapsedMs: capture.metadata.elapsedMs,
         ),
+      );
+      final contentRecovery = classifyAndroidHelperContentRecovery(
+        helperCapture.xml,
+        helperCapture.metadata,
+        foregroundAppPackage: options.appBundleId,
+      );
+      if (contentRecovery == null) return helperCapture;
+      return await _recoverAndroidHelperContentUnavailable(
+        contentRecovery: contentRecovery,
+        packageName: artifact.manifest.packageName,
+        adb: adb,
+        serial: serial,
       );
     } catch (error) {
       forgetAndroidSnapshotHelperInstall(
@@ -328,6 +360,72 @@ _resolveAndroidSnapshotHelperArtifact(
   final bundled = await resolveBundledAndroidSnapshotHelperArtifact();
   if (bundled != null) return (bundled, null);
   return (null, null);
+}
+
+/// Emit a diagnostic, stop the helper process, then fall back to the stock
+/// uiautomator dump.
+///
+/// Called when [classifyAndroidHelperContentRecovery] detects that the helper
+/// returned only system windows, no nodes, or insufficient foreground-app
+/// content.
+Future<({String xml, AndroidSnapshotBackendMetadata metadata})>
+_recoverAndroidHelperContentUnavailable({
+  required AndroidHelperContentRecoveryDecision contentRecovery,
+  required String packageName,
+  required AndroidAdbExecutor adb,
+  required String serial,
+}) async {
+  emitDiagnostic(
+    EmitDiagnosticOptions(
+      level: DiagnosticLevel.warn,
+      phase: 'android_snapshot_helper_content_fallback',
+      data: {
+        'reason': contentRecovery.reason,
+        'fallbackReason': contentRecovery.fallbackReason,
+        ...contentRecovery.diagnostics,
+      },
+    ),
+  );
+  await _resetAndroidSnapshotHelperRuntime(adb, packageName);
+  return _captureStockUiHierarchy(serial, fallbackReason: contentRecovery.fallbackReason);
+}
+
+const _helperRuntimeResetTimeoutMs = 3000;
+const _helperRuntimeResetDelayMs = 200;
+
+/// Force-stop the helper process so the next capture gets a clean start.
+Future<void> _resetAndroidSnapshotHelperRuntime(
+  AndroidAdbExecutor adb,
+  String packageName,
+) async {
+  try {
+    await adb(
+      ['shell', 'am', 'force-stop', packageName],
+      allowFailure: true,
+      timeoutMs: _helperRuntimeResetTimeoutMs,
+    );
+    await Future<void>.delayed(
+      const Duration(milliseconds: _helperRuntimeResetDelayMs),
+    );
+    emitDiagnostic(
+      EmitDiagnosticOptions(
+        level: DiagnosticLevel.debug,
+        phase: 'android_snapshot_helper_runtime_reset',
+        data: {'packageName': packageName},
+      ),
+    );
+  } catch (error) {
+    emitDiagnostic(
+      EmitDiagnosticOptions(
+        level: DiagnosticLevel.warn,
+        phase: 'android_snapshot_helper_runtime_reset_failed',
+        data: {
+          'packageName': packageName,
+          'error': error.toString(),
+        },
+      ),
+    );
+  }
 }
 
 Future<({String xml, AndroidSnapshotBackendMetadata metadata})>

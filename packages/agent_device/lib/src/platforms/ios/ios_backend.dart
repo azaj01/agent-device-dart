@@ -15,6 +15,8 @@ import 'package:agent_device/src/platforms/setting_state.dart';
 import 'package:agent_device/src/runtime/paths.dart';
 import 'package:agent_device/src/snapshot/ios_presentation.dart';
 import 'package:agent_device/src/snapshot/snapshot.dart';
+import 'package:agent_device/src/snapshot/snapshot_occlusion.dart'
+    show annotateCoveredSnapshotNodes;
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
 import 'package:agent_device/src/utils/file_mutex.dart';
@@ -28,6 +30,7 @@ import 'install_artifact.dart';
 import 'perf.dart';
 import 'perf_frame.dart';
 import 'runner_client.dart';
+import 'runner_failure_diagnostics.dart';
 import 'screenshot.dart';
 import 'simctl.dart';
 
@@ -218,7 +221,12 @@ class IosBackend extends Backend {
     final presentedNodes = _shouldPresentIosInteractiveSnapshot(options)
         ? presentIosInteractiveSnapshot(parsedNodes)
         : parsedNodes;
-    final snapshotNodes = attachRefs(presentedNodes);
+    // Annotate nodes covered by a floating overlay so interaction targeting
+    // can refuse to tap them (skipped for raw snapshots). Port of #708.
+    final annotatedNodes = options?.raw == true
+        ? presentedNodes
+        : annotateCoveredSnapshotNodes(presentedNodes);
+    final snapshotNodes = attachRefs(annotatedNodes);
     return BackendSnapshotResult(
       nodes: snapshotNodes,
       truncated: data['truncated'] == true,
@@ -393,6 +401,10 @@ class IosBackend extends Backend {
         x1 = centerX - travel / 2;
         x2 = centerX + travel / 2;
     }
+    // Honor a caller-provided duration via the synthesized drag path; without
+    // one, fall through to the native (non-synthesized) drag. Mirrors upstream
+    // fused `.scroll` (durationMs: command.durationMs, synthesized: != nil).
+    final durationMs = options.durationMs;
     await _sendOrThrow(session, {
       'command': 'drag',
       'x': x1,
@@ -400,7 +412,10 @@ class IosBackend extends Backend {
       'x2': x2,
       'y2': y2,
       'appBundleId': ?bundleId,
-      'durationMs': 250,
+      if (durationMs != null) ...{
+        'durationMs': durationMs,
+        'synthesized': true,
+      },
     });
     return null;
   }
@@ -1330,7 +1345,9 @@ class IosBackend extends Backend {
       if (options.normalizedPosition != null)
         'normalizedPosition': options.normalizedPosition,
       'action': options.action,
-      'steps': options.steps,
+      // Runner field is `sliderSteps` (Int): renamed from `steps` so it doesn't
+      // collide with the sequence command's `steps: [SequenceStep]` array.
+      'sliderSteps': options.steps,
       if (options.elementRect != null) 'rectX': options.elementRect!.x,
       if (options.elementRect != null) 'rectY': options.elementRect!.y,
       if (options.elementRect != null) 'rectW': options.elementRect!.width,
@@ -1482,9 +1499,14 @@ class IosBackend extends Backend {
     final udid = _udid(ctx);
     final kind = await _resolveKind(udid);
     if (kind == 'device') {
-      await launchIosDeviceProcess(udid, bundleId);
+      await launchIosDeviceProcess(udid, bundleId, launchArgs: options?.launchArgs);
     } else {
-      await openIosApp(udid, bundleId, launchConsole: options?.launchConsole);
+      await openIosApp(
+        udid,
+        bundleId,
+        launchConsole: options?.launchConsole,
+        launchArgs: options?.launchArgs,
+      );
     }
     return null;
   }
@@ -1793,11 +1815,14 @@ Future<void> _sendOrThrow(
 ) async {
   final res = await IosRunnerClient.send(session, body);
   if (!res.ok) {
-    throw AppError(
-      AppErrorCodes.commandFailed,
-      'iOS runner ${body['command']} failed: '
-      '${res.errorMessage ?? 'unknown error'}',
-      details: {'command': body['command']},
+    throw await enrichRunnerFailureFromLog(
+      error: AppError(
+        AppErrorCodes.commandFailed,
+        'iOS runner ${body['command']} failed: '
+        '${res.errorMessage ?? 'unknown error'}',
+        details: {'command': body['command'], 'logPath': session.logPath},
+      ),
+      logPath: session.logPath,
     );
   }
 }

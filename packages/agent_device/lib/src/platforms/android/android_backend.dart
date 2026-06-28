@@ -410,6 +410,7 @@ class AndroidBackend extends Backend {
         direction,
         amount: options.amount?.toDouble(),
         pixels: options.pixels?.toDouble(),
+        durationMs: options.durationMs,
       );
     });
     if (warning != null) {
@@ -662,7 +663,7 @@ class AndroidBackend extends Backend {
         'openApp requires target.app/appId/packageName/url on Android',
       );
     }
-    await openAndroidApp(_serial(ctx), app);
+    await openAndroidApp(_serial(ctx), app, launchArgs: options?.launchArgs);
     return null;
   }
 

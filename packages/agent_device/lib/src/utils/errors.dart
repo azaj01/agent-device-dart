@@ -23,6 +23,7 @@ class AppErrorCodes {
   static const String sessionNotFound = 'SESSION_NOT_FOUND';
   static const String unauthorized = 'UNAUTHORIZED';
   static const String ambiguousMatch = 'AMBIGUOUS_MATCH';
+  static const String iosTargetAppCrash = 'IOS_TARGET_APP_CRASH';
   static const String unknown = 'UNKNOWN';
 
   const AppErrorCodes._();
