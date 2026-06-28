@@ -40,3 +40,19 @@ port (Maestro, daemon internals, web/CDP, MCP, 0.18.0 TS refactors).
   occlusion pass. (upstream #708)
 - Recover Android snapshots from system-only / empty UI-automator helper
   output. (upstream #861)
+- iOS `adjustSlider` sent the runner the wrong field after the Swift re-sync
+  (`steps`, now a sequence-command array, vs `sliderSteps`), causing a
+  type-mismatch failure — corrected.
+- The covered/occluded-target annotation is now actually applied in the iOS
+  and Android snapshot pipelines (it shipped but was never invoked), so taps on
+  nodes hidden behind a floating overlay are reliably blocked.
+
+### Performance / internal
+
+- Cache the `DevToolsSecurity` developer-mode preflight (one check per process
+  on success instead of one per cold runner launch).
+- Memoize the covered-node occlusion search (was worst-case O(n³)).
+- External prebuilt runner: resolve `--ios-xctestrun-file` /
+  `--ios-xctest-derived-data-path` to absolute paths and write the
+  env-injected `.xctestrun` into a unique subdirectory of
+  `--ios-xctest-env-dir` so a reused scratch directory is never clobbered.
