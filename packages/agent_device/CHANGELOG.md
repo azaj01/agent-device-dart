@@ -1,3 +1,52 @@
+## 0.0.12
+
+Ports the actionable slice of the upstream 0.18.0 → 0.18.2 gap (102 commits
+triaged; the bulk — command-descriptor/PlatformPlugin refactors, daemon
+internals, web/CDP, cloud providers — is out of scope for this mobile-only,
+daemon-less port). See PORTED_COMMITS.md for the per-commit registry.
+
+**Performance (iOS)**
+
+- `open --relaunch` now works and is fast: the flag was previously accepted
+  but ignored (and not exposed on the CLI). Simulators relaunch via a single
+  `simctl launch --terminate-running-process` call, the XCUITest runner stays
+  hot across the relaunch, and a 5s booted-memo removes repeat
+  `simctl list devices -j` spawns — 0.54s wall on an iPhone 16e simulator,
+  with exactly one device listing per invocation. Real devices keep the
+  conservative runner teardown. (#1010, #1024)
+- The cached runner build no longer rebuilds on package version bumps
+  (content fingerprint only), and the runner app dropped its asset catalogs +
+  compiles unit-test code out of runtime builds. Warm-cache runner relaunch:
+  ~4.4s. (#900)
+
+**Reliability (iOS)**
+
+- Keyboard dismissal in the Swift runner no longer swipes the keyboard down
+  or falls back to coordinate taps (both could trigger unintended UI
+  actions); only safe native dismiss controls are used, with a clear
+  `UNSUPPORTED_OPERATION` otherwise, and the dismiss-control search now spans
+  all buttons, not just toolbars. (#957)
+- Retained runner lifetime is bounded: a runner idle past 5 minutes (env
+  `AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS`, `0` disables) is stopped and
+  relaunched at the next reconnect instead of being adopted. (#1025)
+- The physical-device install timeout is a named constant keeping the 180s
+  end-to-end budget (upstream splits 120s exec under a 180s daemon budget;
+  daemon-less, the exec timeout is the whole budget). (#964)
+
+**Observability**
+
+- Opt-in exec diagnostics: `AGENT_DEVICE_EXEC_TRACE=1` (or `--debug`) records
+  every external command spawn (duration, exit path, first 6 args) to the
+  per-invocation diagnostics log. The CLI now opens a root diagnostics scope,
+  which also un-deadens all pre-existing diagnostic events (screenshot
+  fallbacks, fill verification) in CLI runs. (#1019)
+
+**Triaged as not applicable**
+
+Runner keepalive log tuning (#1017 — the keepalive timer was never ported),
+prepare-deadline threading (#967 — no daemon request envelope), and the
+daemon/web/cloud refactor campaign (~80 commits).
+
 ## 0.0.11
 
 Closes the upstream 0.16.10 → 0.18.0 gap (179 commits triaged; the bulk —
