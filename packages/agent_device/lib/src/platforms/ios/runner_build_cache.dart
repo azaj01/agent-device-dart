@@ -79,10 +79,11 @@ class RunnerCacheMetadata {
   final RunnerCacheArtifact? xctestrun;
   final List<RunnerCacheArtifact> products;
 
-  /// The identity fields a reuse decision compares (everything but artifacts).
+  /// The identity fields a reuse decision compares (everything but artifacts and
+  /// packageVersion — the cache survives version bumps as long as the source
+  /// fingerprint and toolchain are unchanged).
   bool comparableEquals(RunnerCacheMetadata other) =>
       schemaVersion == other.schemaVersion &&
-      packageVersion == other.packageVersion &&
       sourceFingerprint == other.sourceFingerprint &&
       deviceKind == other.deviceKind;
 

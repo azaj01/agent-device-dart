@@ -71,4 +71,31 @@ void main() {
     final b = RunnerBuildCache.expectedMetadata(runnerRoot, 'simulator').sourceFingerprint;
     expect(a, equals(b));
   });
+
+  test('cache reuse is not invalidated by packageVersion changes', () {
+    recordFreshBuild();
+    final base = RunnerBuildCache.expectedMetadata(runnerRoot, 'simulator');
+    // Simulate a version bump: canReuse still holds because packageVersion is
+    // excluded from the comparableEquals key (only schemaVersion, sourceFingerprint,
+    // and deviceKind matter).
+    final bumpedVersion = RunnerCacheMetadata(
+      schemaVersion: base.schemaVersion,
+      packageVersion: '${base.packageVersion}-next',
+      sourceFingerprint: base.sourceFingerprint,
+      deviceKind: base.deviceKind,
+    );
+    expect(RunnerBuildCache.canReuse(derived, bumpedVersion), isTrue);
+  });
+
+  test('cache reuse is invalidated by schemaVersion change', () {
+    recordFreshBuild();
+    final base = RunnerBuildCache.expectedMetadata(runnerRoot, 'simulator');
+    final differentSchema = RunnerCacheMetadata(
+      schemaVersion: base.schemaVersion + 1,
+      packageVersion: base.packageVersion,
+      sourceFingerprint: base.sourceFingerprint,
+      deviceKind: base.deviceKind,
+    );
+    expect(RunnerBuildCache.canReuse(derived, differentSchema), isFalse);
+  });
 }
