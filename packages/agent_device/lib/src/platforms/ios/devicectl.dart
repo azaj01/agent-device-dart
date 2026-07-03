@@ -34,6 +34,17 @@ class IosDeviceProcessInfo {
   const IosDeviceProcessInfo({required this.executable, required this.pid});
 }
 
+/// Default timeout for most `xcrun devicectl` invocations (ms).
+const int iosDevicectlTimeoutMs = 60000;
+
+/// Extended timeout for physical-device app installs, which can take
+/// substantially longer than routine devicectl calls on older hardware.
+/// Upstream splits this budget across layers (IOS_DEVICE_INSTALL_TIMEOUT_MS =
+/// 120_000 at the platform layer under a 180_000 daemon-client install
+/// budget); daemon-less, we collapse both into the exec timeout, so keep the
+/// end-to-end 180s.
+const int iosDeviceInstallTimeoutMs = 180000;
+
 /// Invoke `xcrun devicectl <args>` with the shared action/deviceId error
 /// envelope. Throws [AppError] with [AppErrorCodes.commandFailed] on
 /// non-zero exit.
@@ -244,7 +255,7 @@ Future<void> installIosDeviceApp(String udid, String installablePath) async {
     ['device', 'install', 'app', '--device', udid, installablePath],
     action: 'install iOS app',
     deviceId: udid,
-    timeoutMs: 180000,
+    timeoutMs: iosDeviceInstallTimeoutMs,
   );
 }
 

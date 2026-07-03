@@ -1,6 +1,6 @@
-// Unit coverage for the devicectl JSON payload parsers. These run on
-// every host because they don't shell out — they just exercise the
-// pure-Dart mapping functions against sample payloads.
+// Unit coverage for the devicectl JSON payload parsers and constants.
+// These run on every host because they don't shell out — they just
+// exercise the pure-Dart mapping functions against sample payloads.
 
 import 'dart:convert';
 
@@ -54,6 +54,22 @@ void main() {
 {"result": {"apps": [{"name": "no-id"}, {"bundleIdentifier": "   "}]}}
 ''');
       expect(parseIosDeviceAppsPayload(payload), isEmpty);
+    });
+  });
+
+  group('timeout constants', () {
+    // Mirror of upstream test: installIosInstallablePath on physical device
+    // uses extended devicectl install timeout (IOS_DEVICE_INSTALL_TIMEOUT_MS).
+    // We can't mock runCmd here, so we assert the constant values instead —
+    // installIosDeviceApp calls runIosDevicectl with iosDeviceInstallTimeoutMs.
+    test('iosDeviceInstallTimeoutMs keeps the 180s end-to-end budget', () {
+      // Upstream: 120s platform install timeout under a 180s daemon-client
+      // install budget. Daemon-less, the exec timeout is the whole budget.
+      expect(iosDeviceInstallTimeoutMs, equals(180000));
+    });
+
+    test('iosDeviceInstallTimeoutMs exceeds iosDevicectlTimeoutMs', () {
+      expect(iosDeviceInstallTimeoutMs, greaterThan(iosDevicectlTimeoutMs));
     });
   });
 }
