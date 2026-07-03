@@ -11,6 +11,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'diagnostics.dart';
 import 'errors.dart';
 
 /// Result of a process execution.
@@ -92,6 +93,7 @@ class ExecBackgroundResult {
 
 final RegExp _bareCommandRegex = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._+-]*$');
 final List<String> _windowsPathExtensions = ['.com', '.exe', '.bat', '.cmd'];
+const int _execDiagnosticArgLimit = 6;
 
 /// Asynchronously run a command with the given arguments.
 ///
@@ -104,7 +106,7 @@ Future<RunCmdResult> runCmd(
   ExecOptions options = const ExecOptions(),
 ]) {
   final executable = _normalizeExecutableCommand(cmd);
-  return _runCmdAsync(executable, args, options, streaming: false);
+  return _runCmdAsync(executable, args, options, streaming: false, cmd: cmd);
 }
 
 /// Synchronously run a command with the given arguments.
@@ -190,6 +192,7 @@ Future<RunCmdResult> runCmdStreaming(
     options,
     streaming: true,
     streamOptions: options,
+    cmd: cmd,
   );
 }
 
@@ -298,6 +301,7 @@ Future<ExecBackgroundResult> runCmdBackground(
   ExecOptions options = const ExecOptions(),
 ]) async {
   final executable = _normalizeExecutableCommand(cmd);
+  final execTrace = _createExecTraceContext();
   final Process process;
   try {
     process = await Process.start(
@@ -311,6 +315,7 @@ Future<ExecBackgroundResult> runCmdBackground(
     throw _translateSpawnFailure(e, executable, cmd, args);
   }
 
+  execTrace.emitBackgroundSpawn(cmd, args);
   await process.stdin.close();
 
   var stdout = '';
@@ -327,6 +332,7 @@ Future<ExecBackgroundResult> runCmdBackground(
     await stdoutFuture;
     await stderrFuture;
     if (exitCode != 0 && !options.allowFailure) {
+      execTrace.emitBackgroundCompletion(cmd, args, 'error');
       throw AppError(
         AppErrorCodes.commandFailed,
         '$executable exited with code $exitCode',
@@ -340,6 +346,7 @@ Future<ExecBackgroundResult> runCmdBackground(
         },
       );
     }
+    execTrace.emitBackgroundCompletion(cmd, args, 'exit');
     return RunCmdResult(stdout: stdout, stderr: stderr, exitCode: exitCode);
   }();
 
@@ -383,10 +390,14 @@ Future<RunCmdResult> _runCmdAsync(
   ExecOptions baseOptions, {
   bool streaming = false,
   ExecStreamOptions? streamOptions,
+  // cmd is the original (un-normalized) command name, needed for diagnostics.
+  String? cmd,
 }) async {
   late Process process;
   final timeoutMs = _normalizeTimeoutMs(baseOptions.timeoutMs);
   bool didTimeout = false;
+  final execTrace = _createExecTraceContext();
+  final diagCmd = cmd ?? executable;
 
   try {
     process = await Process.start(
@@ -467,6 +478,8 @@ Future<RunCmdResult> _runCmdAsync(
   final exitCode = await process.exitCode;
   timeoutTimer?.cancel();
 
+  execTrace.emitForegroundCompletion(diagCmd, args);
+
   if (didTimeout && timeoutMs != null) {
     throw AppError(
       AppErrorCodes.commandFailed,
@@ -503,6 +516,110 @@ Future<RunCmdResult> _runCmdAsync(
     exitCode: exitCode,
     stdoutBuffer: baseOptions.binaryStdout ? stdoutBuffer : null,
   );
+}
+
+// ============================================================================
+// Exec trace context
+// ============================================================================
+
+/// Callback surface for exec command diagnostic events.
+class _ExecTraceContext {
+  final void Function(String cmd, List<String> args) emitForegroundCompletion;
+  final void Function(String cmd, List<String> args) emitBackgroundSpawn;
+  final void Function(String cmd, List<String> args, String event)
+  emitBackgroundCompletion;
+
+  const _ExecTraceContext({
+    required this.emitForegroundCompletion,
+    required this.emitBackgroundSpawn,
+    required this.emitBackgroundCompletion,
+  });
+}
+
+_ExecTraceContext _createExecTraceContext() {
+  final meta = getDiagnosticsMeta();
+  final diagnosticsDebugEnabled = meta.debug;
+  final envTraceEnabled = _parseBooleanLiteral(
+    Platform.environment['AGENT_DEVICE_EXEC_TRACE'] ?? '',
+  );
+  if (!diagnosticsDebugEnabled && !envTraceEnabled) {
+    return _createDisabledExecTraceContext();
+  }
+  if (envTraceEnabled && !meta.flushOnSuccess) {
+    updateDiagnosticsScope(
+      const DiagnosticsScopeUpdate(flushOnSuccess: true),
+    );
+  }
+  final startedAtMs = DateTime.now().millisecondsSinceEpoch;
+  var completionEmitted = false;
+  return _ExecTraceContext(
+    emitForegroundCompletion: (cmd, args) {
+      if (completionEmitted) return;
+      completionEmitted = true;
+      _emitExecCommandDiagnostic(cmd: cmd, args: args, startedAtMs: startedAtMs);
+    },
+    emitBackgroundSpawn: (cmd, args) {
+      _emitExecCommandDiagnostic(
+        cmd: cmd,
+        args: args,
+        data: const {'event': 'spawn'},
+      );
+    },
+    emitBackgroundCompletion: (cmd, args, event) {
+      if (completionEmitted) return;
+      completionEmitted = true;
+      _emitExecCommandDiagnostic(
+        cmd: cmd,
+        args: args,
+        startedAtMs: startedAtMs,
+        data: {'event': event},
+      );
+    },
+  );
+}
+
+_ExecTraceContext _createDisabledExecTraceContext() {
+  return _ExecTraceContext(
+    // ignore: avoid_unused_parameters
+    emitForegroundCompletion: (cmd, args) {},
+    // ignore: avoid_unused_parameters
+    emitBackgroundSpawn: (cmd, args) {},
+    // ignore: avoid_unused_parameters
+    emitBackgroundCompletion: (cmd, args, event) {},
+  );
+}
+
+void _emitExecCommandDiagnostic({
+  required String cmd,
+  required List<String> args,
+  int? startedAtMs,
+  Map<String, Object?>? data,
+}) {
+  final argsPrefix = args.take(_execDiagnosticArgLimit).toList();
+  emitDiagnostic(
+    EmitDiagnosticOptions(
+      level: DiagnosticLevel.debug,
+      phase: 'exec_command',
+      durationMs: startedAtMs == null
+          ? null
+          : (DateTime.now().millisecondsSinceEpoch - startedAtMs).clamp(0, 1 << 53),
+      data: {
+        'command': cmd,
+        'argsPrefix': argsPrefix,
+        if (args.length > argsPrefix.length)
+          'omittedArgCount': args.length - argsPrefix.length,
+        ...(data ?? {}),
+      },
+    ),
+  );
+}
+
+/// Parse a boolean literal from an env var value.
+/// Returns true for '1','true','yes','on'; false for '0','false','no','off';
+/// null for anything else (including empty string).
+bool _parseBooleanLiteral(String value) {
+  const truthy = {'1', 'true', 'yes', 'on'};
+  return truthy.contains(value.trim().toLowerCase());
 }
 
 String _normalizeExecutableCommand(String cmd) {

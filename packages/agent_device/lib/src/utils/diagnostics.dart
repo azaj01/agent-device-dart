@@ -63,6 +63,9 @@ class DiagnosticsScopeOptions {
   final String? requestId;
   final String? command;
   final bool debug;
+  /// When true, [flushDiagnosticsToSessionFile] will flush on success even
+  /// when [debug] is false. Mirrors the upstream `flushOnSuccess` option.
+  final bool flushOnSuccess;
   final String? logPath;
   final String? traceLogPath;
 
@@ -71,9 +74,16 @@ class DiagnosticsScopeOptions {
     this.requestId,
     this.command,
     this.debug = false,
+    this.flushOnSuccess = false,
     this.logPath,
     this.traceLogPath,
   });
+}
+
+/// Partial scope update — only fields set to non-null will be changed.
+class DiagnosticsScopeUpdate {
+  final bool? flushOnSuccess;
+  const DiagnosticsScopeUpdate({this.flushOnSuccess});
 }
 
 /// Internal scope state.
@@ -87,6 +97,8 @@ class _DiagnosticsScope implements DiagnosticsScopeOptions {
   @override
   final bool debug;
   @override
+  bool flushOnSuccess;
+  @override
   final String? logPath;
   @override
   final String? traceLogPath;
@@ -99,6 +111,7 @@ class _DiagnosticsScope implements DiagnosticsScopeOptions {
     required this.requestId,
     required this.command,
     required this.debug,
+    required this.flushOnSuccess,
     required this.logPath,
     required this.traceLogPath,
     required this.diagnosticId,
@@ -146,6 +159,7 @@ Future<T> withDiagnosticsScope<T>(
     requestId: options.requestId,
     command: options.command,
     debug: options.debug,
+    flushOnSuccess: options.flushOnSuccess,
     logPath: options.logPath,
     traceLogPath: options.traceLogPath,
     diagnosticId: _createDiagnosticId(),
@@ -155,6 +169,17 @@ Future<T> withDiagnosticsScope<T>(
   return runZoned(fn, zoneValues: {_scopeKey: scope});
 }
 
+/// Updates mutable fields in the current diagnostics scope.
+///
+/// Only fields present in [update] are changed. No-op if no scope is active.
+void updateDiagnosticsScope(DiagnosticsScopeUpdate update) {
+  final scope = _getCurrentScope();
+  if (scope == null) return;
+  if (update.flushOnSuccess != null) {
+    scope.flushOnSuccess = update.flushOnSuccess!;
+  }
+}
+
 /// Metadata about the current diagnostics scope.
 class DiagnosticsMetadata {
   final String? diagnosticId;
@@ -162,6 +187,7 @@ class DiagnosticsMetadata {
   final String? session;
   final String? command;
   final bool debug;
+  final bool flushOnSuccess;
 
   DiagnosticsMetadata({
     this.diagnosticId,
@@ -169,6 +195,7 @@ class DiagnosticsMetadata {
     this.session,
     this.command,
     this.debug = false,
+    this.flushOnSuccess = false,
   });
 }
 
@@ -185,6 +212,7 @@ DiagnosticsMetadata getDiagnosticsMeta() {
     session: scope.session,
     command: scope.command,
     debug: scope.debug,
+    flushOnSuccess: scope.flushOnSuccess,
   );
 }
 
@@ -289,7 +317,7 @@ Future<T> withDiagnosticTimer<T>(
 String? flushDiagnosticsToSessionFile({bool force = false}) {
   final scope = _getCurrentScope();
   if (scope == null) return null;
-  if (!force && !scope.debug) return null;
+  if (!force && !scope.debug && !scope.flushOnSuccess) return null;
   if (scope.events.isEmpty) return null;
 
   try {

@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:agent_device/src/utils/diagnostics.dart';
 import 'package:agent_device/src/utils/logger.dart';
 import 'package:args/command_runner.dart';
 
@@ -156,22 +157,43 @@ Future<int> runCli(List<String> argv, {String? executableName}) async {
 
   initLogger(verbose: verbose);
 
-  try {
-    final result = await runner.run(protectNegativePositionals(argv));
-    return result ?? 0;
-  } on UsageException catch (e) {
-    if (asJson) {
-      printError(e.message, asJson: true);
-    } else {
-      stderr.writeln(e.message);
-      stderr.writeln();
-      stderr.writeln(e.usage);
-    }
-    return 64;
-  } catch (err) {
-    printError(err, asJson: asJson, showDetails: verbose);
-    return 1;
-  }
+  // Root diagnostics scope: emitDiagnostic calls anywhere in the command
+  // (exec tracing, screenshot fallbacks, fill verification, …) collect here
+  // and flush to ~/.agent-device/logs/<session>/<day>/ on completion when
+  // --debug/--verbose is set or an opt-in gate (e.g. AGENT_DEVICE_EXEC_TRACE)
+  // marked the scope flush-on-success.
+  final sessionIdx = argv.indexOf('--session');
+  final session = (sessionIdx >= 0 && sessionIdx + 1 < argv.length)
+      ? argv[sessionIdx + 1]
+      : null;
+  final command = argv
+      .where((a) => !a.startsWith('-'))
+      .cast<String?>()
+      .firstWhere((_) => true, orElse: () => null);
+
+  return withDiagnosticsScope(
+    DiagnosticsScopeOptions(session: session, command: command, debug: verbose),
+    () async {
+      try {
+        final result = await runner.run(protectNegativePositionals(argv));
+        return result ?? 0;
+      } on UsageException catch (e) {
+        if (asJson) {
+          printError(e.message, asJson: true);
+        } else {
+          stderr.writeln(e.message);
+          stderr.writeln();
+          stderr.writeln(e.usage);
+        }
+        return 64;
+      } catch (err) {
+        printError(err, asJson: asJson, showDetails: verbose);
+        return 1;
+      } finally {
+        flushDiagnosticsToSessionFile();
+      }
+    },
+  );
 }
 
 /// Best-effort guess at the program name the user typed. When invoked

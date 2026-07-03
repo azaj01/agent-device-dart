@@ -1,7 +1,9 @@
 @TestOn('mac-os || linux')
 library;
 
+import 'dart:convert';
 import 'dart:io';
+import 'package:agent_device/src/utils/diagnostics.dart';
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
 import 'package:test/test.dart';
@@ -57,6 +59,74 @@ void main() {
           'exit 7',
         ], const ExecOptions(allowFailure: true));
         expect(result.exitCode, equals(7));
+      });
+
+      test('emits exec_command diagnostics when the scope is debug-enabled',
+          () async {
+        final logFile = File(
+          '${Directory.systemTemp.path}/ad-exec-debug-${DateTime.now().microsecondsSinceEpoch}.ndjson',
+        );
+        addTearDown(() async {
+          if (await logFile.exists()) await logFile.delete();
+        });
+
+        final diagnosticsPath = await withDiagnosticsScope(
+          DiagnosticsScopeOptions(
+            session: 'exec-debug',
+            requestId: 'exec-debug-1',
+            command: 'debug',
+            debug: true,
+            logPath: logFile.path,
+          ),
+          () async {
+            await runCmd('echo', ['ok']);
+            return flushDiagnosticsToSessionFile();
+          },
+        );
+
+        final execEvent = _readExecDiagnosticEvent(diagnosticsPath);
+        expect(execEvent?['level'], equals('debug'));
+        expect(execEvent?['phase'], equals('exec_command'));
+        expect(
+          (execEvent?['data'] as Map<String, Object?>?)?['command'],
+          equals('echo'),
+        );
+        expect(
+          (execEvent?['data'] as Map<String, Object?>?)?['argsPrefix'],
+          equals(['ok']),
+        );
+        expect(
+          (execEvent?['data'] as Map<String, Object?>?)?['omittedArgCount'],
+          isNull,
+        );
+        expect(execEvent?['durationMs'], isA<int>());
+      });
+
+      test('stays silent when exec tracing is not enabled', () async {
+        final previousTraceEnv = Platform.environment['AGENT_DEVICE_EXEC_TRACE'];
+        // Dart Platform.environment is read-only; use a scope without debug to
+        // verify the no-trace path (env var unset by default in test runners).
+        final diagnosticsPath = await withDiagnosticsScope(
+          DiagnosticsScopeOptions(
+            session: 'exec-silent',
+            requestId: 'exec-silent-1',
+            command: 'home',
+          ),
+          () async {
+            // Only emit if AGENT_DEVICE_EXEC_TRACE is absent / falsy.
+            if (_parseBooleanLiteralForTest(previousTraceEnv) ||
+                previousTraceEnv != null) {
+              return null;
+            }
+            await runCmd('echo', ['ok']);
+            return flushDiagnosticsToSessionFile();
+          },
+        );
+
+        // If env var is not set, no events should be flushed.
+        if (previousTraceEnv == null) {
+          expect(diagnosticsPath, isNull);
+        }
       });
 
       test('handles stdin', () async {
@@ -352,6 +422,47 @@ void main() {
           ),
         );
       });
+
+      test(
+        'emits bounded exec_command diagnostics when AGENT_DEVICE_EXEC_TRACE is set',
+        () async {
+          // Dart's Platform.environment is read-only; we simulate the trace-
+          // enabled path by using a debug scope (which also enables tracing).
+          final logFile = File(
+            '${Directory.systemTemp.path}/ad-bg-trace-${DateTime.now().microsecondsSinceEpoch}.ndjson',
+          );
+          addTearDown(() async {
+            if (await logFile.exists()) await logFile.delete();
+          });
+
+          final diagnosticsPath = await withDiagnosticsScope(
+            DiagnosticsScopeOptions(
+              session: 'exec-trace',
+              requestId: 'exec-trace-1',
+              command: 'background',
+              debug: true,
+              logPath: logFile.path,
+            ),
+            () async {
+              final bg = await runCmdBackground('echo', [
+                'ok',
+                'a',
+                'b',
+                'c',
+                'd',
+                'e',
+                'f',
+              ]);
+              await bg.wait;
+              return flushDiagnosticsToSessionFile();
+            },
+          );
+
+          _assertBackgroundExecTraceEvents(
+            _readExecDiagnosticEvents(diagnosticsPath),
+          );
+        },
+      );
     });
 
     group('runCmdDetached', () {
@@ -437,4 +548,71 @@ void main() {
       });
     });
   });
+}
+
+// ============================================================================
+// Exec-trace test helpers
+// ============================================================================
+
+List<Map<String, Object?>> _readExecDiagnosticEvents(String? diagnosticsPath) {
+  if (diagnosticsPath == null) return [];
+  final file = File(diagnosticsPath);
+  if (!file.existsSync()) return [];
+  final rows = file
+      .readAsStringSync()
+      .trim()
+      .split('\n')
+      .where((l) => l.isNotEmpty)
+      .map((l) => jsonDecode(l) as Map<String, Object?>)
+      .toList();
+  return rows.where((r) => r['phase'] == 'exec_command').toList();
+}
+
+Map<String, Object?>? _readExecDiagnosticEvent(String? diagnosticsPath) {
+  final events = _readExecDiagnosticEvents(diagnosticsPath);
+  return events.isEmpty ? null : events.first;
+}
+
+void _assertBackgroundExecTraceEvents(
+  List<Map<String, Object?>> execEvents,
+) {
+  expect(
+    execEvents.map(_summarizeExecEvent).toList(),
+    equals([
+      {
+        'phase': 'exec_command',
+        'command': 'echo',
+        'event': 'spawn',
+        'durationType': 'null',
+        'argsPrefix': ['ok', 'a', 'b', 'c', 'd', 'e'],
+        'omittedArgCount': 1,
+      },
+      {
+        'phase': 'exec_command',
+        'command': 'echo',
+        'event': 'exit',
+        'durationType': 'int',
+        'argsPrefix': ['ok', 'a', 'b', 'c', 'd', 'e'],
+        'omittedArgCount': 1,
+      },
+    ]),
+  );
+}
+
+Map<String, Object?> _summarizeExecEvent(Map<String, Object?> event) {
+  final data = event['data'] as Map<String, Object?>?;
+  return {
+    'phase': event['phase'],
+    'command': data?['command'],
+    'event': data?['event'],
+    'durationType': event['durationMs']?.runtimeType.toString() ?? 'null',
+    'argsPrefix': data?['argsPrefix'],
+    'omittedArgCount': data?['omittedArgCount'],
+  };
+}
+
+/// Mirrors upstream's BOOLEAN_TRUE_VALUES check for test use.
+bool _parseBooleanLiteralForTest(String? value) {
+  const truthy = {'1', 'true', 'yes', 'on'};
+  return truthy.contains((value ?? '').trim().toLowerCase());
 }
