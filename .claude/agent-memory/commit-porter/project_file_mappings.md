@@ -195,5 +195,34 @@ Notes:
 - Upstream uses `DeviceInfo` object; Dart uses `String serial` throughout — the recovery helper takes `serial` not `device`
 - TS integration tests with mock ADB not ported (no mock-command infra in Dart test suite); pure-function recovery classifier unit-tested instead
 
+**Booted memo pattern (996d93e97):**
+- Upstream: `simulator.ts` has `SIMULATOR_BOOTED_MEMO_TTL_MS = 5000`, private `simulatorBootedMemo: Map<string, number>`, key is `${device.id}|${device.simulatorSetPath ?? ''}`
+- Dart port: memo lives in `devices.dart` as `_simulatorBootedMemo: Map<String, int>`, key is udid only (MVP has no simulatorSetPath)
+- Public API: `simulatorBootedMemoTtlMs`, `readSimulatorBootedMemo(udid)`, `markSimulatorBooted(udid)`, `clearSimulatorBootedMemo(udid)`, `resetSimulatorBootedMemoForTests({nowMs})`
+- Clock seam: `_nowMsOverride: int Function()?` in `devices.dart` — injectable in tests via `resetSimulatorBootedMemoForTests(nowMs: () => virtualNow)`
+- `listAppleSimulators` seeds memo for every Booted simulator it encounters; callers that launch apps call `markSimulatorBooted` after success
+
+**Relaunch path in ios_backend.dart (996d93e97):**
+- `IosBackend.openApp` now handles `options.relaunch == true`
+- Simulator relaunch: `closeIosApp` (no runner teardown) + seed memo → then `openIosApp` + seed memo
+- Device relaunch: `shutdownRunnerFor` + `terminateIosDeviceProcess` → then `launchIosDeviceProcess`
+- Prior to this commit, `BackendOpenOptions.relaunch` existed but was completely unused in `IosBackend`
+
+**Collapsed simulator relaunch (6dc0aa550):**
+- `openIosApp` gained `terminateRunningApp: bool = false` — adds `--terminate-running-process` to simctl launch args
+- `_buildIosSimulatorLaunchArgs` (private) adds the flag after `--console-pty` (if any) but before the device ID — mirrors upstream flag ordering in `buildIosSimulatorLaunchArgs` (TS)
+- `buildIosSimulatorLaunchArgs` exposed as `@visibleForTesting` public function (private wrapper kept for internal use) — seam for flag-ordering unit tests
+- `ios_backend.dart openApp`: `collapseSimulatorRelaunch = options?.relaunch == true && kind == 'simulator'`; when true, skip separate `closeIosApp` and pass `terminateRunningApp: true` to `openIosApp`
+- Upstream has 3 exclusions (URL opens, clearAppState, openPositionals.length===1); Dart has none — URL opens don't reach this layer, and `clearAppState` is not in `BackendOpenOptions`
+- 7 new unit tests in `test/platforms/ios/app_lifecycle_launch_args_test.dart` test flag ordering directly on `buildIosSimulatorLaunchArgs`
+
+**Idle-stop pattern (b67053e97):**
+- Upstream uses an in-process `setTimeout` (in the daemon's long-lived process) — Dart cannot port this directly because the port is daemon-less
+- Adaptation: enforce idle bound at reconnect time inside `_liveRunner` (ios_backend.dart) — before adopting a retained runner, call `isRunnerSessionIdleExpired(session, idleStop)` and if expired, stop+clear the runner and return null (triggers fresh launch)
+- `lastSuccessAt` already round-trips through the runner record JSON (`lastSuccessfulRunnerResponseAtMs`) since the `dfd5c712` port
+- `resolveRunnerIdleStopDuration([env])` accepts optional env override map for unit-test isolation (Dart `Platform.environment` is read-only)
+- Idle-stop check goes BEFORE `isAlive` probe: "too old → don't probe" mirrors upstream's timer ordering vs readiness preflight
+- Pure-function seams `isRunnerSessionIdleExpired` + `resolveRunnerIdleStopDuration` in `runner_client.dart` — testable without live runner
+
 **Why:** Used every porting session to locate the right files without re-searching.
 **How to apply:** When given a TS file to port, look up its Dart equivalent here first.
