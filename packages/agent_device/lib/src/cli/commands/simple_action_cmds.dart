@@ -28,6 +28,11 @@ class OpenCommand extends AgentDeviceCommand {
           '`am start`, e.g. --launch-args=--es --launch-args=key '
           '--launch-args=value for typed Intent extras.',
     );
+    argParser.addFlag(
+      'relaunch',
+      negatable: false,
+      help: 'Terminate the app process before launching it.',
+    );
   }
 
   @override
@@ -44,11 +49,16 @@ class OpenCommand extends AgentDeviceCommand {
     }
     final target = args.first;
     final launchArgs = argResults?['launch-args'] as List<String>?;
+    final relaunch = argResults?['relaunch'] == true;
     final device = await openAgentDevice();
+    final hasLaunchArgs = launchArgs != null && launchArgs.isNotEmpty;
     await device.openApp(
       target,
-      options: (launchArgs != null && launchArgs.isNotEmpty)
-          ? BackendOpenOptions(launchArgs: launchArgs)
+      options: (hasLaunchArgs || relaunch)
+          ? BackendOpenOptions(
+              launchArgs: hasLaunchArgs ? launchArgs : null,
+              relaunch: relaunch ? true : null,
+            )
           : null,
     );
     emitResult({

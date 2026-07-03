@@ -111,6 +111,9 @@ class IosBackend extends Backend {
           kind: runnerKind,
         );
         _IosRunnerCache.instance.set(udid, session);
+        // Seed the idle clock at launch: a runner that is launched but never
+        // successfully used should still age out of the idle-stop window.
+        session.lastSuccessAt ??= DateTime.now();
         await _writeRunnerRecord(session);
         return session;
       },
@@ -123,15 +126,70 @@ class IosBackend extends Backend {
   /// Return a live runner for [udid] from the in-process cache or the on-disk
   /// record (each verified with [IosRunnerClient.isAlive]), or null if none is
   /// currently reachable.
+  ///
+  /// Idle-stop enforcement (port of upstream b67053e97): before adopting any
+  /// retained runner record we check whether it has been idle for longer than
+  /// [runnerRetainedIdleStopDefault] (env-overridable via
+  /// AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS). An idle-expired runner is stopped,
+  /// its record cleared, and null is returned — triggering a fresh launch. This
+  /// mirrors upstream's in-process timer at the only point the daemon-less port
+  /// can act on the elapsed time: the moment we try to reconnect.
   Future<IosRunnerSession?> _liveRunner(String udid) async {
+    final idleStop = resolveRunnerIdleStopDuration();
+
     final inProc = _IosRunnerCache.instance.get(udid);
-    if (inProc != null && await IosRunnerClient.isAlive(inProc)) return inProc;
+    if (inProc != null) {
+      if (isRunnerSessionIdleExpired(inProc, idleStop)) {
+        _IosRunnerCache.instance.pop(udid);
+        await _stopIdleRunner(inProc, udid);
+        return null;
+      }
+      if (await IosRunnerClient.isAlive(inProc)) {
+        await _touchRunnerRecord(inProc);
+        return inProc;
+      }
+    }
     final diskRecord = await _readRunnerRecord(udid);
-    if (diskRecord != null && await IosRunnerClient.isAlive(diskRecord)) {
-      _IosRunnerCache.instance.set(udid, diskRecord);
-      return diskRecord;
+    if (diskRecord != null) {
+      if (isRunnerSessionIdleExpired(diskRecord, idleStop)) {
+        await _stopIdleRunner(diskRecord, udid);
+        return null;
+      }
+      if (await IosRunnerClient.isAlive(diskRecord)) {
+        await _touchRunnerRecord(diskRecord);
+        _IosRunnerCache.instance.set(udid, diskRecord);
+        return diskRecord;
+      }
     }
     return null;
+  }
+
+  /// Refresh the persisted last-use timestamp for an adopted runner. The
+  /// on-disk record is otherwise only written at launch, and in a daemon-less
+  /// CLI the in-memory `lastSuccessAt` updates die with the process — without
+  /// this touch the record would never show recent use and the idle stop
+  /// could never fire across invocations. Each successful adoption counts as
+  /// use, so the idle bound measures the gap between CLI invocations,
+  /// mirroring upstream's "timer resets on ensureRunnerSession".
+  static Future<void> _touchRunnerRecord(IosRunnerSession session) async {
+    session.lastSuccessAt = DateTime.now();
+    try {
+      await _writeRunnerRecord(session);
+    } catch (_) {
+      // Best-effort: a failed touch must not break command execution.
+    }
+  }
+
+  /// Stop a runner that exceeded the idle-stop window and clear its on-disk
+  /// record. Errors are swallowed — the idle stop is best-effort.
+  static Future<void> _stopIdleRunner(
+    IosRunnerSession session,
+    String udid,
+  ) async {
+    try {
+      await IosRunnerClient.stop(session);
+    } catch (_) {}
+    await _deleteRunnerRecord(udid);
   }
 
   /// Shut down the cached runner for [udid] (if any). Called by the
@@ -1498,6 +1556,40 @@ class IosBackend extends Backend {
     }
     final udid = _udid(ctx);
     final kind = await _resolveKind(udid);
+
+    // iOS simulators relaunch with one `simctl launch --terminate-running-process`
+    // instead of terminate + launch (~1s per relaunch). The collapsed path skips
+    // the separate close dispatch. Real devices keep the conservative teardown:
+    // their runner transport rides the device tunnel, which app relaunches can
+    // disturb.
+    //
+    // The collapse applies to all single app-launch relaunches on simulator.
+    // There is no URL-open path in the Dart backend layer (URLs are handled
+    // above this layer), and there is no clearAppState option in Dart, so no
+    // exclusions are needed beyond the device-kind check.
+    final collapseSimulatorRelaunch =
+        options?.relaunch == true && kind == 'simulator';
+
+    if (options?.relaunch == true && !collapseSimulatorRelaunch) {
+      // open --relaunch: close the app first, then reopen it.
+      //
+      // Simulator close/open go through simctl and never touch the XCUITest
+      // runner, so a healthy runner session survives the relaunch (~6s saved
+      // per open --relaunch). A runner that does go stale is caught by the
+      // readiness preflight and restarted via the invalidate/restart path.
+      // Real devices keep the conservative teardown: their runner transport
+      // rides the device tunnel, which app relaunches can disturb.
+      if (kind == 'device') {
+        await shutdownRunnerFor(udid);
+        await terminateIosDeviceProcess(udid, bundleId);
+      } else {
+        // Simulator: close without touching the runner.
+        await closeIosApp(udid, bundleId);
+        // Seed the booted memo so the subsequent launch skips another listing.
+        markSimulatorBooted(udid);
+      }
+    }
+
     if (kind == 'device') {
       await launchIosDeviceProcess(udid, bundleId, launchArgs: options?.launchArgs);
     } else {
@@ -1506,7 +1598,11 @@ class IosBackend extends Backend {
         bundleId,
         launchConsole: options?.launchConsole,
         launchArgs: options?.launchArgs,
+        terminateRunningApp: collapseSimulatorRelaunch,
       );
+      // Seed the booted memo after a successful launch so subsequent close/
+      // launch calls within the TTL window skip the state listing.
+      markSimulatorBooted(udid);
     }
     return null;
   }
@@ -1728,6 +1824,15 @@ class IosBackend extends Backend {
   Future<String> _resolveKind(String udid) async {
     final cached = _IosKindCache.instance.get(udid);
     if (cached != null) return cached;
+    // Booted-memo consumption (upstream 996d93e97): a UDID observed Booted
+    // within the memo TTL is necessarily a simulator — skip the ~0.1-0.7s
+    // `simctl list devices -j` + `devicectl list devices` spawns entirely.
+    // Device-selector resolution earlier in the same invocation seeds the
+    // memo, so the common command path pays for one listing, not two.
+    if (readSimulatorBootedMemo(udid)) {
+      _IosKindCache.instance.set(udid, 'simulator');
+      return 'simulator';
+    }
     final devices = await listAppleDevices();
     final match = devices.firstWhere(
       (d) => d.id == udid,

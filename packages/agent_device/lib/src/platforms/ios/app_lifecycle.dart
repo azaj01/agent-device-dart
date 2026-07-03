@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:agent_device/src/utils/errors.dart';
 import 'package:agent_device/src/utils/exec.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import '../app_resolution_cache.dart';
 import 'simctl.dart';
@@ -143,17 +144,23 @@ const _iosSimulatorConsoleCaptureDuration = Duration(milliseconds: 25000);
 /// When [launchConsole] is set, `simctl launch --console-pty` is used to
 /// capture the launch-time stdout/stderr to the given file path.
 /// Only valid for iOS simulator targets.
+///
+/// When [terminateRunningApp] is true, `--terminate-running-process` is added
+/// so that `simctl launch` terminates any existing instance before relaunching,
+/// collapsing a separate terminate + launch into a single call.
 Future<int?> openIosApp(
   String udid,
   String bundleId, {
   String? launchConsole,
   List<String>? launchArgs,
+  bool terminateRunningApp = false,
 }) async {
   final simctlArgs = _buildIosSimulatorLaunchArgs(
     udid,
     bundleId,
     launchConsole: launchConsole,
     launchArgs: launchArgs,
+    terminateRunningApp: terminateRunningApp,
   );
   if (launchConsole != null && launchConsole.isNotEmpty) {
     await _runIosSimulatorConsoleLaunch(simctlArgs, launchConsole);
@@ -172,14 +179,21 @@ Future<int?> openIosApp(
   return null;
 }
 
-List<String> _buildIosSimulatorLaunchArgs(
+/// Build the `xcrun simctl launch` argument list for [udid] and [bundleId].
+///
+/// Exposed for testing so callers can verify flag ordering without running
+/// simctl. Production code goes through [openIosApp].
+@visibleForTesting
+List<String> buildIosSimulatorLaunchArgs(
   String udid,
   String bundleId, {
   String? launchConsole,
   List<String>? launchArgs,
+  bool terminateRunningApp = false,
 }) {
   final args = ['launch'];
   if (launchConsole != null && launchConsole.isNotEmpty) args.add('--console-pty');
+  if (terminateRunningApp) args.add('--terminate-running-process');
   args.add(udid);
   args.add(bundleId);
   // App launch arguments are forwarded verbatim after the bundle id. An empty
@@ -187,6 +201,20 @@ List<String> _buildIosSimulatorLaunchArgs(
   if (launchArgs != null) args.addAll(launchArgs);
   return buildSimctlArgs(args);
 }
+
+List<String> _buildIosSimulatorLaunchArgs(
+  String udid,
+  String bundleId, {
+  String? launchConsole,
+  List<String>? launchArgs,
+  bool terminateRunningApp = false,
+}) => buildIosSimulatorLaunchArgs(
+  udid,
+  bundleId,
+  launchConsole: launchConsole,
+  launchArgs: launchArgs,
+  terminateRunningApp: terminateRunningApp,
+);
 
 /// Run `simctl launch --console-pty` and write the combined stdout/stderr
 /// to [logPath]. Treats a timeout as a graceful completion — the app

@@ -16,10 +16,66 @@ import 'package:agent_device/src/utils/exec.dart';
 import 'devicectl.dart';
 import 'simctl.dart';
 
+// Recently-observed-Booted memo. `simctl list devices -j` costs ~0.7s per
+// spawn; a single open --relaunch can invoke it multiple times across the
+// close and launch paths. Mirrors SIMULATOR_BOOTED_MEMO_TTL_MS in the
+// upstream simulator.ts: a simulator shut down externally inside the window
+// surfaces the raw simctl error instead of an auto-boot. Transitions we
+// own (boot) seed the memo; shutdown invalidates it.
+// Exported so unit tests can assert TTL behaviour without duplicating the
+// value.
+const int simulatorBootedMemoTtlMs = 5000;
+
+// Key: udid. Our MVP targets the default simulator set so
+// simulatorSetPath is always null; a single udid key is sufficient.
+final Map<String, int> _simulatorBootedMemo = {};
+
+// Clock seam so unit tests can inject a deterministic timestamp.
+// Production code leaves this null and uses DateTime.now().
+int Function()? _nowMsOverride;
+
+int _nowMs() =>
+    _nowMsOverride?.call() ?? DateTime.now().millisecondsSinceEpoch;
+
+/// Returns true when [udid] has a recently-observed Booted entry in the
+/// in-process memo (within [simulatorBootedMemoTtlMs]).
+bool readSimulatorBootedMemo(String udid) {
+  final observedAt = _simulatorBootedMemo[udid];
+  if (observedAt == null) return false;
+  if (_nowMs() - observedAt > simulatorBootedMemoTtlMs) {
+    _simulatorBootedMemo.remove(udid);
+    return false;
+  }
+  return true;
+}
+
+/// Record that [udid] was observed in Booted state right now.
+void markSimulatorBooted(String udid) {
+  _simulatorBootedMemo[udid] = _nowMs();
+}
+
+/// Invalidate the booted memo for [udid]. Call on simulator shutdown so
+/// subsequent callers do not skip the state listing.
+void clearSimulatorBootedMemo(String udid) {
+  _simulatorBootedMemo.remove(udid);
+}
+
+/// Reset all booted-memo entries and (optionally) the clock override.
+/// Exposed for use in tests only.
+void resetSimulatorBootedMemoForTests({int Function()? nowMs}) {
+  _simulatorBootedMemo.clear();
+  _nowMsOverride = nowMs;
+}
+
 /// Enumerate iOS (/tvOS) simulators via `xcrun simctl list devices -j`.
 ///
 /// Returns one [BackendDeviceInfo] per simulator (available + unavailable).
 /// Physical iOS devices are omitted in the MVP.
+///
+/// Booted state for a given UDID is recorded in the in-process
+/// [_simulatorBootedMemo] when [markSimulatorBooted] has been called
+/// recently. Callers who know a simulator is booted (e.g. after a launch or
+/// open-relaunch) should call [markSimulatorBooted] to avoid repeat listings.
 Future<List<BackendDeviceInfo>> listAppleSimulators() async {
   final result = await runCmd(
     'xcrun',
@@ -51,6 +107,10 @@ Future<List<BackendDeviceInfo>> listAppleSimulators() async {
       final state = entry['state']?.toString() ?? 'Unknown';
       final isAvailable = entry['isAvailable'] == true;
       final typeId = entry['deviceTypeIdentifier']?.toString() ?? '';
+      final booted = state == 'Booted';
+      // Seed the booted memo for any simulator currently in Booted state so
+      // subsequent callers within the TTL window skip the listing entirely.
+      if (booted) markSimulatorBooted(udid);
       out.add(
         BackendDeviceInfo(
           id: udid,
@@ -58,7 +118,7 @@ Future<List<BackendDeviceInfo>> listAppleSimulators() async {
           platform: _platformFromRuntime(runtimeKey.toString()),
           target: _targetFromDeviceType(typeId),
           kind: 'simulator',
-          booted: state == 'Booted',
+          booted: booted,
           details: <String, Object?>{
             'runtime': runtime,
             'state': state,

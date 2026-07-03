@@ -44,6 +44,44 @@ import 'package:path/path.dart' as p;
 // being replayed.
 const Duration runnerTapPreflightSkipFreshness = Duration(seconds: 10);
 
+// Upstream: RUNNER_RETAINED_IDLE_STOP_DEFAULT_MS = 5 * 60_000 in runner-session.ts.
+// A retained runner holds the device's runner lease against every other
+// process on the machine. If nothing reconnects within this window the runner
+// is treated as idle and is stopped on the next reconnect attempt.
+// Set AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS=0 to disable the idle stop (the
+// pre-idle "retain until next reconnect" behaviour).
+const Duration runnerRetainedIdleStopDefault = Duration(minutes: 5);
+
+/// Resolve the idle-stop window from the environment, mirroring the upstream
+/// `resolveRunnerIdleStopMs` logic (runner-session.ts).
+/// Returns [runnerRetainedIdleStopDefault] when the env var is absent/invalid.
+/// Returns [Duration.zero] when the env var is `0`, disabling idle stops.
+Duration resolveRunnerIdleStopDuration([Map<String, String>? env]) {
+  final raw =
+      (env ?? Platform.environment)['AGENT_DEVICE_IOS_RUNNER_IDLE_STOP_MS']
+          ?.trim();
+  if (raw != null && raw.isNotEmpty) {
+    final parsed = int.tryParse(raw);
+    if (parsed != null && parsed >= 0) {
+      return Duration(milliseconds: parsed);
+    }
+  }
+  return runnerRetainedIdleStopDefault;
+}
+
+/// Returns true when [session] has been idle (no successful runner use) for
+/// longer than [idleStop]. Always returns false when [idleStop] is zero
+/// (idle stop disabled) or [session.lastSuccessAt] is null (runner was never
+/// used / record was never updated — give it a chance to connect first).
+///
+/// This is a pure-function seam for unit-testing the idle-stop decision.
+bool isRunnerSessionIdleExpired(IosRunnerSession session, Duration idleStop) {
+  if (idleStop <= Duration.zero) return false;
+  final lastSuccess = session.lastSuccessAt;
+  if (lastSuccess == null) return false;
+  return DateTime.now().difference(lastSuccess) >= idleStop;
+}
+
 /// Returns true when [session] requires a readiness preflight (uptime probe)
 /// before executing [command]. Hot tap/tapSeries paths skip the probe when
 /// the runner responded successfully within [runnerTapPreflightSkipFreshness].
