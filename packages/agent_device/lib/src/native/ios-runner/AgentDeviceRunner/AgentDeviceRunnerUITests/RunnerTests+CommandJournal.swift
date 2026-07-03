@@ -154,6 +154,7 @@ final class RunnerCommandJournal {
   }
 }
 
+#if AGENT_DEVICE_RUNNER_UNIT_TESTS
 extension RunnerTests {
   func testUptimeBypassesCommandJournal() throws {
     let command = runnerJournalCommand("uptime", id: "uptime-probe")
@@ -332,3 +333,4 @@ extension RunnerTests {
     return try JSONDecoder().decode(Response.self, from: Data(responseJson.utf8))
   }
 }
+#endif
